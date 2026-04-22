@@ -37,7 +37,13 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
             "/swagger-ui/**",
             "/v3/api-docs",
             "/v3/api-docs/**",
-            "/error"
+            "/error",
+            "/admin",
+            "/admin/",
+            "/admin/index.html",
+            "/admin/app.js",
+            "/admin/styles.css",
+            "/admin/favicon.ico"
     );
 
     private final Map<String, String> keyToAppId;
