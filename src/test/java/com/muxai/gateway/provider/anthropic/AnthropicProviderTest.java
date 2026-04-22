@@ -162,4 +162,17 @@ class AnthropicProviderTest {
         AnthropicProvider provider = newProvider();
         assertThat(provider.capabilities().embeddings()).isFalse();
     }
+
+    @Test
+    void ocrReturnsInvalidRequestByDefault() {
+        AnthropicProvider provider = newProvider();
+        StepVerifier.create(provider.ocr(new com.muxai.gateway.provider.model.OcrRequest(
+                        "claude-sonnet-4-6", "data:image/png;base64,AA", null, null)))
+                .expectErrorSatisfies(err -> {
+                    assertThat(err).isInstanceOf(ProviderException.class);
+                    assertThat(((ProviderException) err).code())
+                            .isEqualTo(ProviderException.Code.INVALID_REQUEST);
+                })
+                .verify();
+    }
 }

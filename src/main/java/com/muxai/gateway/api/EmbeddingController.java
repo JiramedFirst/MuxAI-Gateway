@@ -7,8 +7,6 @@ import com.muxai.gateway.provider.ProviderException;
 import com.muxai.gateway.provider.model.EmbeddingResponse;
 import com.muxai.gateway.router.Router;
 import jakarta.validation.Valid;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,7 +22,7 @@ import java.util.UUID;
 @RequestMapping("/v1")
 public class EmbeddingController {
 
-    private static final Logger log = LoggerFactory.getLogger(EmbeddingController.class);
+    private static final String ENDPOINT = "embeddings";
 
     private final Router router;
     private final RequestMetrics metrics;
@@ -46,18 +44,11 @@ public class EmbeddingController {
                     router.routeEmbed(body.toInternal(), appId)
                             .block(Duration.ofSeconds(120)));
             long latencyMs = (System.nanoTime() - start) / 1_000_000L;
-
-            metrics.recordRequest(appId, result.decision().description(), "success");
-            log.info("request_id={} app_id={} model_requested={} route_matched={} " +
-                            "provider_attempted={} provider_succeeded={} model_actual={} " +
-                            "latency_ms={} outcome=success",
-                    requestId, appId, body.model(), result.decision().description(),
-                    String.join(",", result.providersAttempted()),
-                    result.providerSucceeded(), result.modelActual(), latencyMs);
-
+            metrics.recordSuccess(requestId, appId, ENDPOINT, body.model(), result, latencyMs, null);
             return ResponseEntity.ok(result.response());
         } catch (ProviderException pe) {
-            metrics.recordRequest(appId, "unknown", "error");
+            long latencyMs = (System.nanoTime() - start) / 1_000_000L;
+            metrics.recordFailure(requestId, appId, ENDPOINT, body.model(), latencyMs, pe);
             throw pe;
         }
     }
