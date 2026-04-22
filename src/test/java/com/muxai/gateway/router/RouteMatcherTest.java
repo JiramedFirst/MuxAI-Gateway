@@ -2,6 +2,7 @@ package com.muxai.gateway.router;
 
 import com.muxai.gateway.config.GatewayProperties;
 import com.muxai.gateway.config.RouteProperties;
+import com.muxai.gateway.hotreload.ConfigRuntime;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -10,8 +11,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class RouteMatcherTest {
 
-    private GatewayProperties props(List<RouteProperties> routes) {
-        return new GatewayProperties(List.of(), routes, List.of());
+    private ConfigRuntime props(List<RouteProperties> routes) {
+        return new ConfigRuntime(new GatewayProperties(List.of(), routes, List.of()));
     }
 
     private RouteProperties route(String appId, String modelPattern, String provider) {

@@ -1,7 +1,7 @@
 package com.muxai.gateway.auth;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.muxai.gateway.config.GatewayProperties;
+import com.muxai.gateway.hotreload.ConfigRuntime;
 import com.muxai.gateway.observability.RequestIdFilter;
 import com.muxai.gateway.observability.RequestMetrics;
 import com.muxai.gateway.ratelimit.RateLimitFilter;
@@ -37,9 +37,9 @@ public class SecurityConfig {
     }
 
     @Bean
-    public ApiKeyAuthFilter apiKeyAuthFilter(GatewayProperties props,
+    public ApiKeyAuthFilter apiKeyAuthFilter(ConfigRuntime runtime,
                                              AuthenticationEntryPoint entryPoint) {
-        return new ApiKeyAuthFilter(props, entryPoint);
+        return new ApiKeyAuthFilter(runtime, entryPoint);
     }
 
     // Prevent Spring Boot from also registering ApiKeyAuthFilter as a servlet-container

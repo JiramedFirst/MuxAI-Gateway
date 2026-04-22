@@ -1,7 +1,7 @@
 package com.muxai.gateway.router;
 
-import com.muxai.gateway.config.GatewayProperties;
 import com.muxai.gateway.config.RouteProperties;
+import com.muxai.gateway.hotreload.ConfigRuntime;
 import org.springframework.stereotype.Component;
 import org.springframework.util.AntPathMatcher;
 
@@ -10,18 +10,18 @@ import java.util.List;
 @Component
 public class RouteMatcher {
 
-    private final GatewayProperties props;
+    private final ConfigRuntime runtime;
     private final AntPathMatcher antPathMatcher = new AntPathMatcher();
 
-    public RouteMatcher(GatewayProperties props) {
-        this.props = props;
+    public RouteMatcher(ConfigRuntime runtime) {
+        this.runtime = runtime;
     }
 
     /**
      * First declared rule wins. Returns null if no rule matches.
      */
     public RouteDecision findRoute(String appId, String model) {
-        List<RouteProperties> routes = props.routesOrEmpty();
+        List<RouteProperties> routes = runtime.current().routesOrEmpty();
         for (int i = 0; i < routes.size(); i++) {
             RouteProperties r = routes.get(i);
             RouteProperties.Match m = r.match() != null ? r.match() : RouteProperties.Match.empty();

@@ -5,6 +5,7 @@ import com.muxai.gateway.observability.RequestMetrics;
 import com.muxai.gateway.provider.LlmProvider;
 import com.muxai.gateway.provider.ProviderException;
 import com.muxai.gateway.provider.ProviderRegistry;
+import com.muxai.gateway.provider.model.ChatChunk;
 import com.muxai.gateway.provider.model.ChatRequest;
 import com.muxai.gateway.provider.model.ChatResponse;
 import com.muxai.gateway.provider.model.EmbeddingRequest;
@@ -14,6 +15,7 @@ import com.muxai.gateway.provider.model.OcrResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
@@ -51,6 +53,38 @@ public class Router {
                 .map(resp -> new RoutedResult<>(
                         resp, decision, List.copyOf(attempted),
                         succeeded.get(), modelActual.get()));
+    }
+
+    /**
+     * Streams chat tokens. Only the primary provider is attempted — once bytes
+     * have been written to the client, falling back to another provider would
+     * produce a garbled stream. If the primary fails before the first chunk is
+     * emitted, the error surfaces to the controller as a normal ProviderException.
+     */
+    public Flux<ChatChunk> streamChat(ChatRequest request, String appId) {
+        RouteDecision decision = matcher.findRoute(appId, request.model());
+        if (decision == null) {
+            return Flux.error(new ProviderException(
+                    ProviderException.Code.INVALID_REQUEST,
+                    "router",
+                    "No route matches app=" + appId + " model=" + request.model()));
+        }
+        RouteProperties.Step step = decision.primary();
+        LlmProvider provider = providers.require(step.provider());
+        String model = step.model() != null ? step.model() : request.model();
+        ChatRequest adapted = request.withModel(model);
+
+        long start = System.nanoTime();
+        AtomicReference<String> outcome = new AtomicReference<>("success");
+        return provider.chatStream(adapted)
+                .doOnError(err -> outcome.set(
+                        err instanceof ProviderException pe ? "error:" + pe.code() : "error:unknown"))
+                .doFinally(sig -> metrics.recordProviderCall(
+                        step.provider(), outcome.get(), System.nanoTime() - start));
+    }
+
+    public RouteDecision decide(String appId, String model) {
+        return matcher.findRoute(appId, model);
     }
 
     public Mono<RoutedResult<EmbeddingResponse>> routeEmbed(EmbeddingRequest request, String appId) {

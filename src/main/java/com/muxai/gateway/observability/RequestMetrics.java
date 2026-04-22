@@ -63,6 +63,45 @@ public class RequestMetrics {
      * 429s don't pollute {@code muxai.request.total} with a synthetic "rate_limited"
      * value in the {@code route} label (which is reserved for real route descriptions).
      */
+    public void recordCacheHit(String appId, String endpoint) {
+        Counter.builder("muxai.cache.hit.total")
+                .description("Count of requests served from the semantic cache")
+                .tags(Tags.of(
+                        Tag.of("app_id", safe(appId)),
+                        Tag.of("endpoint", safe(endpoint))))
+                .register(registry)
+                .increment();
+    }
+
+    public void recordCacheMiss(String appId, String endpoint) {
+        Counter.builder("muxai.cache.miss.total")
+                .description("Count of requests that missed the semantic cache")
+                .tags(Tags.of(
+                        Tag.of("app_id", safe(appId)),
+                        Tag.of("endpoint", safe(endpoint))))
+                .register(registry)
+                .increment();
+    }
+
+    public void recordPiiRedaction(String appId, String kind) {
+        Counter.builder("muxai.pii.redacted.total")
+                .description("Count of PII tokens redacted by the gateway before forwarding to providers")
+                .tags(Tags.of(
+                        Tag.of("app_id", safe(appId)),
+                        Tag.of("kind", safe(kind))))
+                .register(registry)
+                .increment();
+    }
+
+    public void recordStreamSuccess(String requestId, String appId, String endpoint,
+                                    String modelRequested, long latencyMs) {
+        recordRequest(appId, "stream", "success");
+        log.info("request_id={} app_id={} endpoint={} model_requested={} route_matched=stream " +
+                        "provider_attempted= provider_succeeded=stream model_actual={} " +
+                        "latency_ms={} prompt_tokens=0 completion_tokens=0 outcome=success error_code=null",
+                requestId, appId, endpoint, modelRequested, modelRequested, latencyMs);
+    }
+
     public void recordRateLimited(String appId) {
         Counter.builder("muxai.request.rate_limited.total")
                 .description("Count of requests rejected by the per-app rate limiter")

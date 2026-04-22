@@ -194,22 +194,53 @@ class ChatControllerIT {
     }
 
     @Test
-    void streamingReturns501() {
-        try {
-            rest().exchange(
-                    url("/v1/chat/completions"),
-                    HttpMethod.POST,
-                    new HttpEntity<>(Map.of(
-                            "model", "smart",
-                            "messages", java.util.List.of(Map.of("role", "user", "content", "hi")),
-                            "stream", true),
-                            authHeaders("mgw_test_devkey")),
-                    String.class);
-            throw new AssertionError("expected 501");
-        } catch (HttpStatusCodeException ex) {
-            assertThat(ex.getStatusCode().value()).isEqualTo(501);
-            assertThat(ex.getResponseBodyAsString()).contains("STREAMING_UNSUPPORTED");
+    void streamingRequestIsForwardedAsServerSentEvents() throws Exception {
+        String sseBody = """
+                data: {"id":"c1","object":"chat.completion.chunk","created":1,"model":"gpt-4o",\
+                "choices":[{"index":0,"delta":{"role":"assistant"},"finish_reason":null}]}
+
+                data: {"id":"c1","object":"chat.completion.chunk","created":1,"model":"gpt-4o",\
+                "choices":[{"index":0,"delta":{"content":"hi"},"finish_reason":null}]}
+
+                data: [DONE]
+
+                """;
+        primary.stubFor(post(urlEqualTo("/chat/completions"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "text/event-stream")
+                        .withBody(sseBody)));
+
+        java.net.HttpURLConnection conn = (java.net.HttpURLConnection)
+                java.net.URI.create(url("/v1/chat/completions")).toURL().openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("Authorization", "Bearer mgw_test_devkey");
+        conn.setRequestProperty("Accept", "text/event-stream");
+        conn.setDoOutput(true);
+        conn.getOutputStream().write(
+                ("{\"model\":\"smart\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}],\"stream\":true}").getBytes());
+
+        assertThat(conn.getResponseCode()).isEqualTo(200);
+        String ct = conn.getHeaderField("Content-Type");
+        assertThat(ct).contains("text/event-stream");
+
+        // Read chunks tolerantly: SseEmitter flushes and closes, and some JDK
+        // HTTP client versions surface the close as "Premature EOF" even though
+        // all the actual SSE frames were delivered. We capture whatever arrived
+        // and assert on the content.
+        conn.setReadTimeout(3_000);
+        StringBuilder body = new StringBuilder();
+        try (var is = conn.getInputStream()) {
+            byte[] buf = new byte[4096];
+            int n;
+            while ((n = is.read(buf)) > 0) {
+                body.append(new String(buf, 0, n));
+            }
+        } catch (java.io.IOException ignored) {
+            // tolerate trailing chunk-encoding issues, see comment above
         }
+        assertThat(body.toString()).contains("data:");
+        assertThat(body.toString()).contains("[DONE]");
     }
 
     @Test

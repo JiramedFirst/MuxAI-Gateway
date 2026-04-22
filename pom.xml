@@ -13,7 +13,7 @@
 
     <groupId>com.muxai</groupId>
     <artifactId>muxai-gateway</artifactId>
-    <version>0.1.0</version>
+    <version>1.0.0</version>
     <name>muxai-gateway</name>
     <description>Provider-agnostic LLM gateway</description>
 
