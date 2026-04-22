@@ -56,7 +56,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
         RateLimiter.Decision d = limiter.tryAcquire(principal.appId());
 
-        if (d.limit() > 0) {
+        if (!d.unlimited()) {
             response.setHeader("X-RateLimit-Limit", Long.toString(d.limit()));
             response.setHeader("X-RateLimit-Remaining", Long.toString(Math.max(0L, d.remaining())));
         }
@@ -73,7 +73,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             response.setContentLength(payload.length);
             response.getOutputStream().write(payload);
             response.flushBuffer();
-            metrics.recordRequest(principal.appId(), "rate_limited", "error");
+            metrics.recordRateLimited(principal.appId());
             return;
         }
 

@@ -16,6 +16,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Duration;
+import java.util.Objects;
 import java.util.UUID;
 
 @RestController
@@ -48,9 +49,10 @@ public class ChatController {
 
         long start = System.nanoTime();
         try {
-            Router.RoutedResult<ChatResponse> result =
+            Router.RoutedResult<ChatResponse> result = Objects.requireNonNull(
                     router.routeChat(body.toInternal(), appId)
-                            .block(Duration.ofSeconds(120));
+                            .block(Duration.ofSeconds(120)),
+                    "routeChat returned empty Mono");
             long latencyMs = (System.nanoTime() - start) / 1_000_000L;
             metrics.recordSuccess(requestId, appId, ENDPOINT, body.model(), result,
                     latencyMs, result.response().usage());

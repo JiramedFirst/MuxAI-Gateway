@@ -16,12 +16,24 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * State is per-process — adequate for a single gateway instance. For a
  * multi-replica deployment, swap in a Redis-backed implementation.
+ *
+ * TODO(hot-reload): {@link #limitsByApp} is frozen at construction and
+ * {@link #buckets} grows monotonically. When GatewayProperties gains hot-reload
+ * support, this class must also: (a) rebuild {@code limitsByApp} from the new
+ * config, (b) drop or rescale buckets for app-ids whose limit changed, and
+ * (c) evict buckets for app-ids removed from the config. Otherwise stale
+ * buckets will keep enforcing old limits forever.
  */
 @Component
 public class RateLimiter {
 
     public record Decision(boolean allowed, long remaining, long limit, long retryAfterMillis) {
         public static final Decision UNLIMITED = new Decision(true, -1L, -1L, 0L);
+
+        /** True when this decision represents an app with no configured limit. */
+        public boolean unlimited() {
+            return limit < 0;
+        }
     }
 
     private final Map<String, Integer> limitsByApp;
