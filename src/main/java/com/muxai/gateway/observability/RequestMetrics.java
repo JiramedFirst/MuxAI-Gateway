@@ -1,16 +1,23 @@
 package com.muxai.gateway.observability;
 
+import com.muxai.gateway.provider.ProviderException;
+import com.muxai.gateway.provider.model.Usage;
+import com.muxai.gateway.router.Router;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Tag;
 import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.Timer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.TimeUnit;
 
 @Component
 public class RequestMetrics {
+
+    private static final Logger log = LoggerFactory.getLogger(RequestMetrics.class);
 
     private final MeterRegistry registry;
 
@@ -49,6 +56,44 @@ public class RequestMetrics {
                         Tag.of("direction", safe(direction))))
                 .register(registry)
                 .increment(count);
+    }
+
+    /**
+     * Record a successful request: increments the request counter, emits token counters,
+     * and writes the structured success log line. Token extraction handles null usage.
+     */
+    public <T> void recordSuccess(String requestId, String appId, String endpoint,
+                                  String modelRequested, Router.RoutedResult<T> result,
+                                  long latencyMs, Usage usage) {
+        int promptTokens = usage != null && usage.promptTokens() != null ? usage.promptTokens() : 0;
+        int completionTokens = usage != null && usage.completionTokens() != null ? usage.completionTokens() : 0;
+
+        recordRequest(appId, result.decision().description(), "success");
+        if (result.providerSucceeded() != null) {
+            recordTokens(result.providerSucceeded(), result.modelActual(), "prompt", promptTokens);
+            recordTokens(result.providerSucceeded(), result.modelActual(), "completion", completionTokens);
+        }
+
+        log.info("request_id={} app_id={} endpoint={} model_requested={} route_matched={} " +
+                        "provider_attempted={} provider_succeeded={} model_actual={} " +
+                        "latency_ms={} prompt_tokens={} completion_tokens={} outcome=success error_code=null",
+                requestId, appId, endpoint, modelRequested, result.decision().description(),
+                String.join(",", result.providersAttempted()),
+                result.providerSucceeded(), result.modelActual(),
+                latencyMs, promptTokens, completionTokens);
+    }
+
+    /**
+     * Record a failed request: increments the request counter with outcome=error and
+     * writes the structured error log line.
+     */
+    public void recordFailure(String requestId, String appId, String endpoint,
+                              String modelRequested, long latencyMs, ProviderException pe) {
+        recordRequest(appId, "unknown", "error");
+        log.info("request_id={} app_id={} endpoint={} model_requested={} route_matched=unknown " +
+                        "provider_attempted= provider_succeeded=null model_actual=null " +
+                        "latency_ms={} prompt_tokens=0 completion_tokens=0 outcome=error error_code={}",
+                requestId, appId, endpoint, modelRequested, latencyMs, pe.code());
     }
 
     private static String safe(String s) {
