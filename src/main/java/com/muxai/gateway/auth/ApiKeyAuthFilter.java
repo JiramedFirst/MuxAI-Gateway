@@ -1,6 +1,7 @@
 package com.muxai.gateway.auth;
 
 import com.muxai.gateway.config.GatewayProperties;
+import com.muxai.gateway.hotreload.ConfigRuntime;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -25,12 +26,17 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(ApiKeyAuthFilter.class);
 
-    private final Map<String, String> keyToAppId;
+    private volatile Map<String, String> keyToAppId;
     private final AuthenticationEntryPoint entryPoint;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
 
-    public ApiKeyAuthFilter(GatewayProperties props, AuthenticationEntryPoint entryPoint) {
+    public ApiKeyAuthFilter(ConfigRuntime runtime, AuthenticationEntryPoint entryPoint) {
         this.entryPoint = entryPoint;
+        rebuild(runtime.current());
+        runtime.addListener(this::rebuild);
+    }
+
+    private void rebuild(GatewayProperties props) {
         Map<String, String> map = new HashMap<>();
         for (GatewayProperties.ApiKey k : props.apiKeysOrEmpty()) {
             if (k.key() != null && k.appId() != null) {
@@ -38,7 +44,7 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
             }
         }
         this.keyToAppId = Map.copyOf(map);
-        log.info("ApiKeyAuthFilter initialized with {} API key(s)", keyToAppId.size());
+        log.info("ApiKeyAuthFilter loaded {} API key(s)", keyToAppId.size());
     }
 
     @Override

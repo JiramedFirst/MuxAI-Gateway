@@ -19,12 +19,14 @@ public interface LlmProvider {
     Mono<ChatResponse> chat(ChatRequest request);
 
     default Flux<ChatChunk> chatStream(ChatRequest request) {
-        return Flux.error(new UnsupportedOperationException(
+        return Flux.error(new ProviderException(
+                ProviderException.Code.UNSUPPORTED, id(),
                 "Streaming not implemented for provider " + id()));
     }
 
     default Mono<EmbeddingResponse> embed(EmbeddingRequest request) {
-        return Mono.error(new UnsupportedOperationException(
+        return Mono.error(new ProviderException(
+                ProviderException.Code.UNSUPPORTED, id(),
                 "Embeddings not supported by provider " + id()));
     }
 

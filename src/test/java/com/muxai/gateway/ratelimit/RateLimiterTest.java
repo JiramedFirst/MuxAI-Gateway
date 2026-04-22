@@ -15,7 +15,7 @@ class RateLimiterTest {
 
     @Test
     void unconfiguredAppIsUnlimited() {
-        RateLimiter rl = new RateLimiter(props());
+        RateLimiter rl = RateLimiter.inMemory(props());
         for (int i = 0; i < 1000; i++) {
             assertThat(rl.tryAcquire("anyone").allowed()).isTrue();
         }
@@ -23,7 +23,7 @@ class RateLimiterTest {
 
     @Test
     void nullLimitIsUnlimited() {
-        RateLimiter rl = new RateLimiter(props(
+        RateLimiter rl = RateLimiter.inMemory(props(
                 new GatewayProperties.ApiKey("k", "app", null)));
         for (int i = 0; i < 500; i++) {
             assertThat(rl.tryAcquire("app").allowed()).isTrue();
@@ -32,7 +32,7 @@ class RateLimiterTest {
 
     @Test
     void zeroOrNegativeLimitIsUnlimited() {
-        RateLimiter rl = new RateLimiter(props(
+        RateLimiter rl = RateLimiter.inMemory(props(
                 new GatewayProperties.ApiKey("k1", "zero", 0),
                 new GatewayProperties.ApiKey("k2", "neg", -5)));
         assertThat(rl.tryAcquire("zero").allowed()).isTrue();
@@ -44,7 +44,7 @@ class RateLimiterTest {
     @Test
     void burstUpToLimitThenRejects() {
         int limit = 5;
-        RateLimiter rl = new RateLimiter(props(
+        RateLimiter rl = RateLimiter.inMemory(props(
                 new GatewayProperties.ApiKey("k", "app", limit)));
 
         for (int i = 0; i < limit; i++) {
@@ -65,7 +65,7 @@ class RateLimiterTest {
 
     @Test
     void bucketsAreIsolatedAcrossApps() {
-        RateLimiter rl = new RateLimiter(props(
+        RateLimiter rl = RateLimiter.inMemory(props(
                 new GatewayProperties.ApiKey("k1", "alpha", 2),
                 new GatewayProperties.ApiKey("k2", "beta", 2)));
 
@@ -81,7 +81,7 @@ class RateLimiterTest {
 
     @Test
     void duplicateAppIdTakesMaxLimit() {
-        RateLimiter rl = new RateLimiter(props(
+        RateLimiter rl = RateLimiter.inMemory(props(
                 new GatewayProperties.ApiKey("k1", "app", 3),
                 new GatewayProperties.ApiKey("k2", "app", 10)));
 
@@ -94,7 +94,7 @@ class RateLimiterTest {
 
     @Test
     void nullAppIdIsUnlimited() {
-        RateLimiter rl = new RateLimiter(props(
+        RateLimiter rl = RateLimiter.inMemory(props(
                 new GatewayProperties.ApiKey("k", "app", 1)));
         assertThat(rl.tryAcquire(null).allowed()).isTrue();
     }
@@ -103,7 +103,7 @@ class RateLimiterTest {
     void refillAllowsAnotherRequestAfterWait() throws InterruptedException {
         // 600/min = 10 per second = 1 token every ~100ms. Use a high rate so the test
         // finishes quickly without being flaky.
-        RateLimiter rl = new RateLimiter(props(
+        RateLimiter rl = RateLimiter.inMemory(props(
                 new GatewayProperties.ApiKey("k", "app", 600)));
 
         for (int i = 0; i < 600; i++) {

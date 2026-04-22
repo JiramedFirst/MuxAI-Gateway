@@ -1,7 +1,7 @@
 package com.muxai.gateway.provider.openai;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.muxai.gateway.config.ProviderProperties;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -14,10 +14,11 @@ public class OpenAiProviderFactory {
     static final int MAX_IN_MEMORY_SIZE = 32 * 1024 * 1024;
 
     private final WebClient.Builder builder;
+    private final ObjectMapper mapper;
 
-    @Autowired
-    public OpenAiProviderFactory(WebClient.Builder builder) {
+    public OpenAiProviderFactory(WebClient.Builder builder, ObjectMapper mapper) {
         this.builder = builder;
+        this.mapper = mapper;
     }
 
     public OpenAiProvider create(ProviderProperties props) {
@@ -28,6 +29,6 @@ public class OpenAiProviderFactory {
         if (props.apiKey() != null && !props.apiKey().isBlank()) {
             local = local.defaultHeader(HttpHeaders.AUTHORIZATION, "Bearer " + props.apiKey());
         }
-        return new OpenAiProvider(props, local.build());
+        return new OpenAiProvider(props, local.build(), mapper);
     }
 }

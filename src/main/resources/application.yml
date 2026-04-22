@@ -20,7 +20,7 @@ server:
   # matches a typical terminationGracePeriodSeconds default.
   shutdown: graceful
   tomcat:
-    connection-timeout: 120s
+    connection-timeout: 180s
 
 management:
   endpoints:
@@ -50,3 +50,43 @@ logging:
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
+
+# MuxAI full-version knobs. Everything below is off by default so a zero-delta
+# upgrade keeps Phase 1 behaviour — flip each switch as you opt into the
+# corresponding feature.
+muxai:
+  pii:
+    enabled: false
+    email: true
+    phone: true
+    credit-card: true
+    ssn: true
+    ipv4: false
+
+  cache:
+    # Exact-match response cache for deterministic (temperature=0) chat requests.
+    # Turn on when you have repeated prompts — e.g. boilerplate evals — where a
+    # cache hit saves the provider round-trip. Streaming and tool-enabled requests
+    # bypass the cache regardless of this flag.
+    enabled: false
+    max-entries: 10000
+    ttl-seconds: 3600
+    max-cacheable-temperature: 0.0
+
+  hot-reload:
+    # When enabled, providers.yml is re-parsed on mtime change and API keys,
+    # routes, and rate-limit entries swap in without restart. Provider structure
+    # changes (new backend, new base-url, retype) still need a restart.
+    enabled: false
+    path: ./config/providers.yml
+    interval-ms: 5000
+
+  rate-limit:
+    # Future-forward: "redis" would share token buckets across replicas for
+    # horizontally-scaled deployments. Only "memory" ships today; selecting
+    # anything else falls back to memory with a warning.
+    backend: memory
+    redis:
+      host: localhost
+      port: 6379
+      key-prefix: "muxai:ratelimit:"

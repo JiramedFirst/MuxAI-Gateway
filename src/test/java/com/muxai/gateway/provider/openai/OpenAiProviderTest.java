@@ -34,7 +34,7 @@ class OpenAiProviderTest {
                 "sk-test-key",
                 timeoutMs,
                 List.of("gpt-4o"));
-        OpenAiProviderFactory factory = new OpenAiProviderFactory(WebClient.builder());
+        OpenAiProviderFactory factory = new OpenAiProviderFactory(WebClient.builder(), new com.fasterxml.jackson.databind.ObjectMapper());
         return factory.create(props);
     }
 
@@ -145,7 +145,7 @@ class OpenAiProviderTest {
     void missingApiKeyFailsImmediately() {
         ProviderProperties props = new ProviderProperties(
                 "openai-test", "openai", wm.baseUrl(), "", 60_000L, List.of("gpt-4o"));
-        OpenAiProviderFactory factory = new OpenAiProviderFactory(WebClient.builder());
+        OpenAiProviderFactory factory = new OpenAiProviderFactory(WebClient.builder(), new com.fasterxml.jackson.databind.ObjectMapper());
         OpenAiProvider provider = factory.create(props);
 
         StepVerifier.create(provider.chat(sampleRequest()))

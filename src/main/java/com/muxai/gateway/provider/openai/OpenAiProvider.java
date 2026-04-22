@@ -1,18 +1,25 @@
 package com.muxai.gateway.provider.openai;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.muxai.gateway.config.ProviderProperties;
 import com.muxai.gateway.provider.LlmProvider;
 import com.muxai.gateway.provider.ProviderCapabilities;
 import com.muxai.gateway.provider.ProviderException;
+import com.muxai.gateway.provider.model.ChatChunk;
 import com.muxai.gateway.provider.model.ChatRequest;
 import com.muxai.gateway.provider.model.ChatResponse;
 import com.muxai.gateway.provider.model.EmbeddingRequest;
 import com.muxai.gateway.provider.model.EmbeddingResponse;
 import com.muxai.gateway.provider.model.OcrRequest;
 import com.muxai.gateway.provider.model.OcrResponse;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.io.buffer.DataBufferLimitException;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.MediaType;
+import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.web.reactive.function.client.WebClient;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.net.ConnectException;
@@ -25,10 +32,12 @@ public class OpenAiProvider implements LlmProvider {
 
     private final ProviderProperties props;
     private final WebClient http;
+    private final ObjectMapper mapper;
 
-    public OpenAiProvider(ProviderProperties props, WebClient http) {
+    public OpenAiProvider(ProviderProperties props, WebClient http, ObjectMapper mapper) {
         this.props = props;
         this.http = http;
+        this.mapper = mapper;
     }
 
     @Override
@@ -44,7 +53,7 @@ public class OpenAiProvider implements LlmProvider {
 
     @Override
     public ProviderCapabilities capabilities() {
-        return ProviderCapabilities.chatAndEmbeddings();
+        return ProviderCapabilities.openAiFull();
     }
 
     @Override
@@ -52,11 +61,40 @@ public class OpenAiProvider implements LlmProvider {
         return guardApiKey()
                 .then(http.post()
                         .uri("/chat/completions")
-                        .bodyValue(request)
+                        .bodyValue(request.withStream(null))
                         .retrieve()
                         .onStatus(HttpStatusCode::isError, this::mapErrorStatus)
                         .bodyToMono(ChatResponse.class))
                 .timeout(Duration.ofMillis(props.timeoutMsOrDefault()))
+                .onErrorMap(this::translate);
+    }
+
+    @Override
+    public Flux<ChatChunk> chatStream(ChatRequest request) {
+        if (props.apiKey() == null || props.apiKey().isBlank()) {
+            return Flux.error(new ProviderException(
+                    ProviderException.Code.AUTH_FAILED, props.id(),
+                    "Provider '" + props.id() + "' has no API key configured"));
+        }
+        ParameterizedTypeReference<ServerSentEvent<String>> type = new ParameterizedTypeReference<>() {};
+        return http.post()
+                .uri("/chat/completions")
+                .accept(MediaType.TEXT_EVENT_STREAM)
+                .bodyValue(request.withStream(Boolean.TRUE))
+                .retrieve()
+                .onStatus(HttpStatusCode::isError, this::mapErrorStatus)
+                .bodyToFlux(type)
+                .timeout(Duration.ofMillis(props.timeoutMsOrDefault()))
+                .takeUntil(evt -> "[DONE]".equals(evt.data()))
+                .filter(evt -> evt.data() != null && !"[DONE]".equals(evt.data()))
+                .concatMap(evt -> {
+                    try {
+                        ChatChunk chunk = mapper.readValue(evt.data(), ChatChunk.class);
+                        return Flux.just(chunk);
+                    } catch (Exception e) {
+                        return Flux.empty();
+                    }
+                })
                 .onErrorMap(this::translate);
     }
 
@@ -102,7 +140,7 @@ public class OpenAiProvider implements LlmProvider {
                     String text = (resp.choices() == null || resp.choices().isEmpty()
                             || resp.choices().get(0).message() == null)
                             ? ""
-                            : resp.choices().get(0).message().content();
+                            : resp.choices().get(0).message().contentAsText();
                     return new OcrResponse(
                             resp.model() != null ? resp.model() : request.model(),
                             text,
