@@ -8,7 +8,7 @@ any OpenAI-compatible endpoint) a YAML file tells it to use.
 
 ## Status
 
-Phase 1 MVP:
+Phase 1 MVP + rate-limit enforcement:
 
 - `POST /v1/chat/completions` (non-streaming)
 - `POST /v1/embeddings`
@@ -18,12 +18,15 @@ Phase 1 MVP:
 - Provider adapters: OpenAI, Anthropic (request/response translation), and
   any OpenAI-compatible endpoint (use `type: openai` with your own `base-url`)
 - Per-app API keys (Bearer token)
+- **Per-app rate limiting** — token-bucket keyed by `app-id`, driven by
+  `rate-limit-per-min` in `providers.yml`. Responses include
+  `X-RateLimit-Limit` / `X-RateLimit-Remaining`; 429s include `Retry-After`.
 - Prometheus metrics at `/actuator/prometheus`
 - Swagger UI at `/swagger-ui.html`
 - Admin UI at `/admin/` (read-only dashboard + playground)
 
 Not yet implemented: streaming, config hot reload, Redis, semantic
-cache, PII redaction, tool calling, vision, rate-limit enforcement.
+cache, PII redaction, tool calling, vision.
 
 ## Quickstart
 
@@ -121,6 +124,24 @@ muxai:
 
 Routes are evaluated top-to-bottom; the first one that matches wins. Put
 specific rules before general ones.
+
+## Rate limiting
+
+Each entry in `api-keys` may set `rate-limit-per-min`. The gateway keeps a
+per-`app-id` token bucket (capacity = the configured limit, refilled at
+`limit / 60s`) and rejects excess requests with HTTP 429:
+
+```json
+{ "error": { "message": "Rate limit exceeded: 60 requests/min for app 'hr-app'",
+             "type": "rate_limit_exceeded", "code": "RATE_LIMITED" } }
+```
+
+Every authenticated response also carries `X-RateLimit-Limit` and
+`X-RateLimit-Remaining`; 429s add `Retry-After` (seconds). Omit the field,
+or set it to `0` / negative, to disable limiting for that app.
+
+State is in-memory — adequate for a single gateway instance. Multi-replica
+deployments should swap in a shared backend (Redis) before relying on quotas.
 
 ## Adding an OpenAI-compatible backend
 

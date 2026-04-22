@@ -1,6 +1,10 @@
 package com.muxai.gateway.auth;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.muxai.gateway.config.GatewayProperties;
+import com.muxai.gateway.observability.RequestMetrics;
+import com.muxai.gateway.ratelimit.RateLimitFilter;
+import com.muxai.gateway.ratelimit.RateLimiter;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -32,8 +36,24 @@ public class SecurityConfig {
     }
 
     @Bean
+    public RateLimitFilter rateLimitFilter(RateLimiter limiter,
+                                           ObjectMapper mapper,
+                                           RequestMetrics metrics) {
+        return new RateLimitFilter(limiter, mapper, metrics);
+    }
+
+    @Bean
+    public FilterRegistrationBean<RateLimitFilter> rateLimitFilterRegistration(
+            RateLimitFilter filter) {
+        FilterRegistrationBean<RateLimitFilter> reg = new FilterRegistrationBean<>(filter);
+        reg.setEnabled(false);
+        return reg;
+    }
+
+    @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                    ApiKeyAuthFilter apiKeyAuthFilter,
+                                                   RateLimitFilter rateLimitFilter,
                                                    AuthenticationEntryPoint entryPoint) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -42,27 +62,10 @@ public class SecurityConfig {
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(e -> e.authenticationEntryPoint(entryPoint))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers(
-                                "/actuator/health",
-                                "/actuator/health/**",
-                                "/actuator/info",
-                                "/actuator/prometheus",
-                                "/actuator/metrics",
-                                "/actuator/metrics/**",
-                                "/swagger-ui.html",
-                                "/swagger-ui/**",
-                                "/v3/api-docs",
-                                "/v3/api-docs/**",
-                                "/error",
-                                "/admin",
-                                "/admin/",
-                                "/admin/index.html",
-                                "/admin/app.js",
-                                "/admin/styles.css",
-                                "/admin/favicon.ico"
-                        ).permitAll()
+                        .requestMatchers(PublicPaths.PATTERNS.toArray(String[]::new)).permitAll()
                         .anyRequest().authenticated())
-                .addFilterBefore(apiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(apiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(rateLimitFilter, ApiKeyAuthFilter.class);
         return http.build();
     }
 }
