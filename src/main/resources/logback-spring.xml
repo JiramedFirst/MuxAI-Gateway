@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!--
+      Override Spring Boot's default console pattern to include the MDC
+      'request_id' stamped by RequestIdFilter. Unset entries render as '-'
+      so the column is fixed-width across request and non-request logs.
+    -->
+    <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+    <property name="MUXAI_LOG_PATTERN"
+              value="%d{${LOG_DATEFORMAT_PATTERN:-yyyy-MM-dd HH:mm:ss.SSS}} ${LOG_LEVEL_PATTERN:-%5p} [%thread] %-40.40logger{39} rid=%X{request_id:--} : %m%n${LOG_EXCEPTION_CONVERSION_WORD:-%wEx}"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${MUXAI_LOG_PATTERN}</pattern>
+            <charset>UTF-8</charset>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+    <logger name="com.muxai.gateway" level="INFO"/>
+</configuration>

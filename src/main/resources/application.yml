@@ -8,9 +8,17 @@ spring:
     import:
       - optional:file:./config/providers.yml
       - optional:classpath:providers.yml
+  lifecycle:
+    # Give in-flight requests up to 30s to finish after SIGTERM before the JVM exits.
+    # Works alongside `server.shutdown: graceful`.
+    timeout-per-shutdown-phase: 30s
 
 server:
   port: 8080
+  # Let in-flight requests finish after SIGTERM instead of cutting them mid-stream.
+  # Kubernetes / docker-compose / systemd all deliver SIGTERM on stop; 30s
+  # matches a typical terminationGracePeriodSeconds default.
+  shutdown: graceful
   tomcat:
     connection-timeout: 120s
 
@@ -19,6 +27,17 @@ management:
     web:
       exposure:
         include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      # Show component details (including the provider inventory added by
+      # ProvidersHealthIndicator) so operators can verify config from curl.
+      show-details: always
+      show-components: always
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,providers
   metrics:
     distribution:
       percentiles-histogram:

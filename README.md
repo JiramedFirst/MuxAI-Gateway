@@ -8,7 +8,7 @@ any OpenAI-compatible endpoint) a YAML file tells it to use.
 
 ## Status
 
-Phase 1 MVP + rate-limit enforcement:
+Phase 1 MVP + rate-limit enforcement + production hardening:
 
 - `POST /v1/chat/completions` (non-streaming)
 - `POST /v1/embeddings`
@@ -21,7 +21,15 @@ Phase 1 MVP + rate-limit enforcement:
 - **Per-app rate limiting** — token-bucket keyed by `app-id`, driven by
   `rate-limit-per-min` in `providers.yml`. Responses include
   `X-RateLimit-Limit` / `X-RateLimit-Remaining`; 429s include `Retry-After`.
+- **Startup config validation** — duplicate provider ids, undefined fallback
+  providers, unreachable routes, and missing api-keys all fail the boot
+  (loud crash, no silent degradation).
+- **Request correlation ids** — every response carries `X-Request-Id`
+  (generated or echoed from the inbound header) and the same id prefixes
+  every log line via MDC (`rid=...`).
+- **Graceful shutdown** — SIGTERM drains in-flight requests for up to 30s.
 - Prometheus metrics at `/actuator/prometheus`
+- Kubernetes-style liveness / readiness probes at `/actuator/health/{liveness,readiness}`
 - Swagger UI at `/swagger-ui.html`
 - Admin UI at `/admin/` (read-only dashboard + playground)
 
@@ -158,10 +166,42 @@ all accept the same JSON that OpenAI does, so they all use `type: openai`:
 
 ## Docker
 
+The image runs as UID 1001 (`muxai`), exposes an `HEALTHCHECK` against
+`/actuator/health`, and sets JVM flags that honour container memory limits
+(`-XX:MaxRAMPercentage=75 -XX:+ExitOnOutOfMemoryError`).
+
 ```bash
 docker build -t muxai-gateway .
 docker run -p 8080:8080 \
+  -e SPRING_PROFILES_ACTIVE=prod \
   -e OPENAI_API_KEY=sk-... \
   -v $(pwd)/config:/app/config \
   muxai-gateway
 ```
+
+## Production deployment
+
+1. **Activate the prod profile**: set `SPRING_PROFILES_ACTIVE=prod`. This
+   turns off the Spring banner, collapses logging to WARN/INFO, and hides
+   stack traces from error responses. See `application-prod.yml`.
+2. **Inject secrets via env, not YAML**: `providers.yml` references
+   `${OPENAI_API_KEY:}` / `${ANTHROPIC_API_KEY:}` and the same substitution
+   works for API keys (`key: ${MGW_PROD_KEY}`). Never commit real keys.
+3. **Replace the dev API key**: the shipped `mgw_test_devkey_DO_NOT_USE_IN_PROD`
+   is explicitly named to fail audits — swap it out for a real key sourced
+   from your secrets manager before deploying.
+4. **Wire up probes**:
+   - Liveness: `GET /actuator/health/liveness` — is the JVM alive?
+   - Readiness: `GET /actuator/health/readiness` — is at least one provider
+     registered? (This group includes the custom `providers` indicator.)
+   - Health: `GET /actuator/health` — full component breakdown.
+5. **Scrape metrics**: `GET /actuator/prometheus`. In a hostile network, put
+   management endpoints behind a separate internal listener or NetworkPolicy —
+   `PublicPaths.java` currently whitelists them.
+6. **Capture request ids**: log aggregators should key on the `rid=` column
+   (logback) or the `X-Request-Id` response header. Callers supplying their
+   own ids are respected as long as the value is ≤128 chars and
+   printable-ASCII; anything else is replaced with a fresh UUID.
+7. **Single-replica rate limiting**: the token bucket is in-memory. If you
+   scale out, either pin apps to replicas or swap in a Redis-backed
+   `RateLimiter` before trusting the quotas.
