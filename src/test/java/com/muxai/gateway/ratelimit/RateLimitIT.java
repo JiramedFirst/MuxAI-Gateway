@@ -58,10 +58,23 @@ class RateLimitIT {
 
         r.add("muxai.routes[0].primary.provider", () -> "primary");
 
-        // Tight per-minute quota so the filter actually trips in this test.
-        r.add("muxai.api-keys[0].key", () -> "mgw_rate_key");
-        r.add("muxai.api-keys[0].app-id", () -> "rate-app");
+        // Each test uses its own app-id so buckets don't cross-contaminate
+        // when the Spring context (and hence RateLimiter) is shared.
+        r.add("muxai.api-keys[0].key", () -> "mgw_rate_under");
+        r.add("muxai.api-keys[0].app-id", () -> "rate-app-under");
         r.add("muxai.api-keys[0].rate-limit-per-min", () -> "2");
+
+        r.add("muxai.api-keys[1].key", () -> "mgw_rate_over");
+        r.add("muxai.api-keys[1].app-id", () -> "rate-app-over");
+        r.add("muxai.api-keys[1].rate-limit-per-min", () -> "2");
+
+        r.add("muxai.api-keys[2].key", () -> "mgw_unlimited");
+        r.add("muxai.api-keys[2].app-id", () -> "unlimited-app");
+        // no rate-limit-per-min -> unlimited
+
+        r.add("muxai.api-keys[3].key", () -> "mgw_public_key");
+        r.add("muxai.api-keys[3].app-id", () -> "public-app");
+        r.add("muxai.api-keys[3].rate-limit-per-min", () -> "1");
     }
 
     private static final String OK_BODY = """
@@ -79,7 +92,18 @@ class RateLimitIT {
         conn.setDoOutput(true);
         conn.getOutputStream().write(
                 "{\"model\":\"gpt-4o\",\"messages\":[{\"role\":\"user\",\"content\":\"hi\"}]}".getBytes());
-        conn.getResponseCode(); // force request
+        conn.getResponseCode();
+        return conn;
+    }
+
+    private HttpURLConnection doGet(String path, String apiKey) throws Exception {
+        HttpURLConnection conn = (HttpURLConnection)
+                URI.create("http://localhost:" + port + path).toURL().openConnection();
+        conn.setRequestMethod("GET");
+        if (apiKey != null) {
+            conn.setRequestProperty("Authorization", "Bearer " + apiKey);
+        }
+        conn.getResponseCode();
         return conn;
     }
 
@@ -96,10 +120,10 @@ class RateLimitIT {
                         .withHeader("Content-Type", "application/json")
                         .withBody(OK_BODY)));
 
-        HttpURLConnection conn = doPost("/v1/chat/completions", "mgw_rate_key");
+        HttpURLConnection conn = doPost("/v1/chat/completions", "mgw_rate_under");
         assertThat(conn.getResponseCode()).isEqualTo(200);
         assertThat(conn.getHeaderField("X-RateLimit-Limit")).isEqualTo("2");
-        // First call consumes 1 of 2 tokens.
+        // First call for this app-id consumes 1 of 2 tokens.
         assertThat(conn.getHeaderField("X-RateLimit-Remaining")).isEqualTo("1");
     }
 
@@ -110,16 +134,11 @@ class RateLimitIT {
                         .withHeader("Content-Type", "application/json")
                         .withBody(OK_BODY)));
 
-        // Burn through the 2-token bucket. Use a fresh API key so this test does
-        // not share state with underQuotaSucceedsAndExposesRateLimitHeaders.
-        // (The limiter is per-app-id, so we rely on test ordering being isolated
-        // by a Spring context reload — @DirtiesContext is heavy; instead we drain
-        // whatever remains, accepting either 200 or 429 for the first two calls.)
-        for (int i = 0; i < 3; i++) {
-            doPost("/v1/chat/completions", "mgw_rate_key");
-        }
+        // Dedicated app-id with limit=2 — drain the bucket then expect 429.
+        doPost("/v1/chat/completions", "mgw_rate_over");
+        doPost("/v1/chat/completions", "mgw_rate_over");
 
-        HttpURLConnection conn = doPost("/v1/chat/completions", "mgw_rate_key");
+        HttpURLConnection conn = doPost("/v1/chat/completions", "mgw_rate_over");
         assertThat(conn.getResponseCode()).isEqualTo(429);
         assertThat(conn.getHeaderField("Retry-After")).isNotNull();
         assertThat(Integer.parseInt(conn.getHeaderField("Retry-After"))).isGreaterThanOrEqualTo(1);
@@ -129,5 +148,30 @@ class RateLimitIT {
         String body = readBody(conn);
         assertThat(body).contains("RATE_LIMITED");
         assertThat(body).contains("rate_limit_exceeded");
+    }
+
+    @Test
+    void unlimitedAppDoesNotEmitRateLimitHeaders() throws Exception {
+        upstream.stubFor(post(urlEqualTo("/chat/completions"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody(OK_BODY)));
+
+        HttpURLConnection conn = doPost("/v1/chat/completions", "mgw_unlimited");
+        assertThat(conn.getResponseCode()).isEqualTo(200);
+        assertThat(conn.getHeaderField("X-RateLimit-Limit")).isNull();
+        assertThat(conn.getHeaderField("X-RateLimit-Remaining")).isNull();
+        assertThat(conn.getHeaderField("Retry-After")).isNull();
+    }
+
+    @Test
+    void publicPathSkipsRateLimitingEntirely() throws Exception {
+        // /actuator/health is on PublicPaths and does not require auth. The filter
+        // must shouldNotFilter() this path — otherwise it would either 401 (no
+        // principal) or set rate-limit headers. Verify both negatives.
+        HttpURLConnection conn = doGet("/actuator/health", null);
+        assertThat(conn.getResponseCode()).isEqualTo(200);
+        assertThat(conn.getHeaderField("X-RateLimit-Limit")).isNull();
+        assertThat(conn.getHeaderField("X-RateLimit-Remaining")).isNull();
     }
 }

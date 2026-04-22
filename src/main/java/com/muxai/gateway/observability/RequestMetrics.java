@@ -59,6 +59,19 @@ public class RequestMetrics {
     }
 
     /**
+     * Record a request rejected by the rate-limit filter. Dedicated counter so
+     * 429s don't pollute {@code muxai.request.total} with a synthetic "rate_limited"
+     * value in the {@code route} label (which is reserved for real route descriptions).
+     */
+    public void recordRateLimited(String appId) {
+        Counter.builder("muxai.request.rate_limited.total")
+                .description("Count of requests rejected by the per-app rate limiter")
+                .tags(Tags.of(Tag.of("app_id", safe(appId))))
+                .register(registry)
+                .increment();
+    }
+
+    /**
      * Record a successful request: increments the request counter, emits token counters,
      * and writes the structured success log line. Token extraction handles null usage.
      */
