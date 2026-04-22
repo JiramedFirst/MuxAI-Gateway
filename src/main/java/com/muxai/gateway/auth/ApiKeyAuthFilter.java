@@ -19,32 +19,11 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 public class ApiKeyAuthFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(ApiKeyAuthFilter.class);
-
-    private static final List<String> PUBLIC_PATHS = List.of(
-            "/actuator/health",
-            "/actuator/health/**",
-            "/actuator/info",
-            "/actuator/prometheus",
-            "/actuator/metrics",
-            "/actuator/metrics/**",
-            "/swagger-ui.html",
-            "/swagger-ui/**",
-            "/v3/api-docs",
-            "/v3/api-docs/**",
-            "/error",
-            "/admin",
-            "/admin/",
-            "/admin/index.html",
-            "/admin/app.js",
-            "/admin/styles.css",
-            "/admin/favicon.ico"
-    );
 
     private final Map<String, String> keyToAppId;
     private final AuthenticationEntryPoint entryPoint;
@@ -65,7 +44,7 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
     @Override
     protected boolean shouldNotFilter(HttpServletRequest request) {
         String path = request.getRequestURI();
-        for (String p : PUBLIC_PATHS) {
+        for (String p : PublicPaths.PATTERNS) {
             if (pathMatcher.match(p, path)) return true;
         }
         return false;

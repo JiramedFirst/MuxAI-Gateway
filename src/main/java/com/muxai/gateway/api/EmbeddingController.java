@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Duration;
-import java.util.Objects;
 import java.util.UUID;
 
 @RestController
@@ -40,9 +39,9 @@ public class EmbeddingController {
 
         long start = System.nanoTime();
         try {
-            Router.RoutedResult<EmbeddingResponse> result = Objects.requireNonNull(
+            Router.RoutedResult<EmbeddingResponse> result =
                     router.routeEmbed(body.toInternal(), appId)
-                            .block(Duration.ofSeconds(120)));
+                            .block(Duration.ofSeconds(120));
             long latencyMs = (System.nanoTime() - start) / 1_000_000L;
             metrics.recordSuccess(requestId, appId, ENDPOINT, body.model(), result, latencyMs, null);
             return ResponseEntity.ok(result.response());

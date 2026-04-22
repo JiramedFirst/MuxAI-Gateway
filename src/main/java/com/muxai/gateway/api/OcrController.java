@@ -15,7 +15,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Duration;
-import java.util.Objects;
 import java.util.UUID;
 
 @RestController
@@ -40,9 +39,9 @@ public class OcrController {
 
         long start = System.nanoTime();
         try {
-            Router.RoutedResult<OcrResponse> result = Objects.requireNonNull(
+            Router.RoutedResult<OcrResponse> result =
                     router.routeOcr(body.toInternal(), appId)
-                            .block(Duration.ofSeconds(120)));
+                            .block(Duration.ofSeconds(120));
             long latencyMs = (System.nanoTime() - start) / 1_000_000L;
             metrics.recordSuccess(requestId, appId, ENDPOINT, body.model(), result,
                     latencyMs, result.response().usage());
