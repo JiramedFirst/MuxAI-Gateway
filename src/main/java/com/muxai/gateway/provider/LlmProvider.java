@@ -5,6 +5,8 @@ import com.muxai.gateway.provider.model.ChatRequest;
 import com.muxai.gateway.provider.model.ChatResponse;
 import com.muxai.gateway.provider.model.EmbeddingRequest;
 import com.muxai.gateway.provider.model.EmbeddingResponse;
+import com.muxai.gateway.provider.model.OcrRequest;
+import com.muxai.gateway.provider.model.OcrResponse;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -24,5 +26,11 @@ public interface LlmProvider {
     default Mono<EmbeddingResponse> embed(EmbeddingRequest request) {
         return Mono.error(new UnsupportedOperationException(
                 "Embeddings not supported by provider " + id()));
+    }
+
+    default Mono<OcrResponse> ocr(OcrRequest request) {
+        return Mono.error(new ProviderException(
+                ProviderException.Code.INVALID_REQUEST, id(),
+                "OCR not supported by provider " + id()));
     }
 }

@@ -29,6 +29,14 @@ muxai:
       timeout-ms: 120000
       models: [llama3.3, qwen2.5-coder, nomic-embed-text]
 
+    # OpenTyphoon — Thai LLM, OpenAI-compatible (https://docs.opentyphoon.ai)
+    - id: opentyphoon-main
+      type: openai
+      base-url: https://api.opentyphoon.ai/v1
+      api-key: ${OPENTYPHOON_API_KEY:}
+      timeout-ms: 60000
+      models: [typhoon-v2.1-12b-instruct, typhoon-v2-70b-instruct, typhoon-v2-8b-instruct, typhoon-ocr]
+
   # ─── Routes: how to pick a provider for each request ─────────────────────
   # First match wins. Put specific matches first, catch-all last.
   routes:
@@ -51,6 +59,9 @@ muxai:
 
     - match: {model: "gpt-*"}
       primary:   {provider: openai-main}
+
+    - match: {model: "typhoon-*"}
+      primary:   {provider: opentyphoon-main}
 
     - match: {model: "text-embedding-*"}
       primary:   {provider: openai-main}

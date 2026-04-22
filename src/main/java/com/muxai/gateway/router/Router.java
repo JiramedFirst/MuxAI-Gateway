@@ -9,6 +9,8 @@ import com.muxai.gateway.provider.model.ChatRequest;
 import com.muxai.gateway.provider.model.ChatResponse;
 import com.muxai.gateway.provider.model.EmbeddingRequest;
 import com.muxai.gateway.provider.model.EmbeddingResponse;
+import com.muxai.gateway.provider.model.OcrRequest;
+import com.muxai.gateway.provider.model.OcrResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -64,6 +66,24 @@ public class Router {
         AtomicReference<String> succeeded = new AtomicReference<>();
         AtomicReference<String> modelActual = new AtomicReference<>();
         return attemptEmbed(chain, 0, request, null, attempted, succeeded, modelActual)
+                .map(resp -> new RoutedResult<>(
+                        resp, decision, List.copyOf(attempted),
+                        succeeded.get(), modelActual.get()));
+    }
+
+    public Mono<RoutedResult<OcrResponse>> routeOcr(OcrRequest request, String appId) {
+        RouteDecision decision = matcher.findRoute(appId, request.model());
+        if (decision == null) {
+            return Mono.error(new ProviderException(
+                    ProviderException.Code.INVALID_REQUEST,
+                    "router",
+                    "No route matches app=" + appId + " model=" + request.model()));
+        }
+        List<RouteProperties.Step> chain = buildChain(decision);
+        List<String> attempted = new ArrayList<>();
+        AtomicReference<String> succeeded = new AtomicReference<>();
+        AtomicReference<String> modelActual = new AtomicReference<>();
+        return attemptOcr(chain, 0, request, null, attempted, succeeded, modelActual)
                 .map(resp -> new RoutedResult<>(
                         resp, decision, List.copyOf(attempted),
                         succeeded.get(), modelActual.get()));
@@ -149,6 +169,44 @@ public class Router {
                     }
                     log.warn("Provider {} failed ({}); trying fallback", step.provider(), e.code());
                     return attemptEmbed(chain, i + 1, request, e, attempted, succeeded, modelActual);
+                });
+    }
+
+    private Mono<OcrResponse> attemptOcr(
+            List<RouteProperties.Step> chain,
+            int i,
+            OcrRequest request,
+            Throwable lastError,
+            List<String> attempted,
+            AtomicReference<String> succeeded,
+            AtomicReference<String> modelActual) {
+
+        if (i >= chain.size()) {
+            return Mono.error(lastError != null ? lastError :
+                    new ProviderException(
+                            ProviderException.Code.PROVIDER_ERROR, "router",
+                            "Route chain exhausted with no error recorded"));
+        }
+        RouteProperties.Step step = chain.get(i);
+        LlmProvider provider = providers.require(step.provider());
+        String model = step.model() != null ? step.model() : request.model();
+        OcrRequest adapted = request.withModel(model);
+        attempted.add(step.provider());
+
+        long start = System.nanoTime();
+        return provider.ocr(adapted)
+                .doOnSuccess(resp -> {
+                    succeeded.set(step.provider());
+                    modelActual.set(model);
+                    metrics.recordProviderCall(step.provider(), "success", System.nanoTime() - start);
+                })
+                .onErrorResume(ProviderException.class, e -> {
+                    metrics.recordProviderCall(step.provider(), "error:" + e.code(), System.nanoTime() - start);
+                    if (!e.code().retryable || i + 1 >= chain.size()) {
+                        return Mono.error(e);
+                    }
+                    log.warn("Provider {} failed ({}); trying fallback", step.provider(), e.code());
+                    return attemptOcr(chain, i + 1, request, e, attempted, succeeded, modelActual);
                 });
     }
 
