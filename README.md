@@ -19,8 +19,9 @@ Phase 1 MVP:
 - Per-app API keys (Bearer token)
 - Prometheus metrics at `/actuator/prometheus`
 - Swagger UI at `/swagger-ui.html`
+- Admin UI at `/admin/` (read-only dashboard + playground)
 
-Not yet implemented: streaming, config hot reload, admin UI, Redis, semantic
+Not yet implemented: streaming, config hot reload, Redis, semantic
 cache, PII redaction, tool calling, vision, rate-limit enforcement.
 
 ## Quickstart
@@ -64,6 +65,9 @@ curl http://localhost:8080/actuator/prometheus | head
 
 # 8. Swagger UI
 open http://localhost:8080/swagger-ui.html
+
+# 9. Admin UI (paste an API key, then explore providers/routes/models + playground)
+open http://localhost:8080/admin/
 ```
 
 ## Configuration

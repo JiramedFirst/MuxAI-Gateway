@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MuxAI Gateway — Admin</title>
+  <link rel="stylesheet" href="/admin/styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">Mux</span><span class="logo-accent">AI</span>
+      <span class="subtitle">Gateway · Admin</span>
+    </div>
+    <div class="topbar-right">
+      <span id="health-pill" class="pill pill-muted">health: …</span>
+      <button id="key-btn" class="btn btn-ghost" type="button">API key</button>
+    </div>
+  </header>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="overview" role="tab">Overview</button>
+    <button class="tab" data-tab="models" role="tab">Models</button>
+    <button class="tab" data-tab="playground" role="tab">Playground</button>
+  </nav>
+
+  <main>
+    <section id="tab-overview" class="tab-panel active">
+      <div id="overview-error" class="error hidden"></div>
+
+      <div class="grid">
+        <div class="card">
+          <h2>Providers</h2>
+          <div id="providers-empty" class="muted hidden">No providers configured.</div>
+          <table id="providers-table" class="data">
+            <thead><tr>
+              <th>ID</th><th>Type</th><th>Base URL</th><th>API key</th><th>Timeout</th><th>Models</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>Routes</h2>
+          <div class="muted small">Evaluated top-to-bottom; first match wins.</div>
+          <div id="routes-empty" class="muted hidden">No routes configured.</div>
+          <table id="routes-table" class="data">
+            <thead><tr>
+              <th>#</th><th>Match</th><th>Primary</th><th>Fallback</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+
+        <div class="card">
+          <h2>API keys</h2>
+          <div id="keys-empty" class="muted hidden">No API keys configured.</div>
+          <table id="keys-table" class="data">
+            <thead><tr>
+              <th>Key</th><th>App</th><th>Rate limit / min</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-models" class="tab-panel">
+      <div class="card">
+        <h2>Models</h2>
+        <div class="muted small">From <code>GET /v1/models</code></div>
+        <div id="models-error" class="error hidden"></div>
+        <table id="models-table" class="data">
+          <thead><tr><th>Model</th><th>Owner (provider)</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="tab-playground" class="tab-panel">
+      <div class="card">
+        <h2>Playground</h2>
+        <div class="muted small">Sends a non-streaming chat completion through the gateway.</div>
+
+        <div class="pg-grid">
+          <label class="field">
+            <span>Model</span>
+            <input id="pg-model" type="text" placeholder="e.g. smart, gpt-4o, claude-sonnet-4-6" />
+          </label>
+          <label class="field">
+            <span>Temperature</span>
+            <input id="pg-temp" type="number" step="0.1" min="0" max="2" value="0.7" />
+          </label>
+          <label class="field">
+            <span>Max tokens</span>
+            <input id="pg-max" type="number" min="1" placeholder="(optional)" />
+          </label>
+        </div>
+
+        <label class="field">
+          <span>System prompt</span>
+          <textarea id="pg-system" rows="2" placeholder="You are helpful."></textarea>
+        </label>
+
+        <label class="field">
+          <span>User message</span>
+          <textarea id="pg-user" rows="5" placeholder="Hello"></textarea>
+        </label>
+
+        <div class="row">
+          <button id="pg-send" class="btn btn-primary" type="button">Send</button>
+          <span id="pg-status" class="muted small"></span>
+        </div>
+
+        <div id="pg-output-wrap" class="hidden">
+          <h3>Response</h3>
+          <pre id="pg-output" class="output"></pre>
+          <h3>Raw JSON</h3>
+          <pre id="pg-raw" class="output mono-small"></pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="key-dialog">
+    <form method="dialog" class="key-form">
+      <h2>API key</h2>
+      <p class="muted small">
+        Stored in this browser (localStorage). Used as a <code>Bearer</code> token for gateway calls.
+      </p>
+      <input id="key-input" type="password" autocomplete="off" placeholder="mgw_…" />
+      <div class="row row-end">
+        <button value="cancel" class="btn btn-ghost" type="submit">Cancel</button>
+        <button id="key-save" value="save" class="btn btn-primary" type="submit">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/admin/app.js"></script>
+</body>
+</html>
