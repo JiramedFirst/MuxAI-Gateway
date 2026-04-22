@@ -67,7 +67,8 @@ public class AnthropicProvider implements LlmProvider {
         if (req.messages() != null) {
             for (ChatMessage m : req.messages()) {
                 if ("system".equals(m.role())) {
-                    system = (system == null) ? m.content() : (system + "\n\n" + m.content());
+                    String text = m.content() == null ? "" : m.content().toString();
+                    system = (system == null) ? text : (system + "\n\n" + text);
                 } else {
                     conversation.add(m);
                 }
