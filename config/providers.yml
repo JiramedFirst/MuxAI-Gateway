@@ -35,7 +35,7 @@ muxai:
       base-url: https://api.opentyphoon.ai/v1
       api-key: ${OPENTYPHOON_API_KEY:}
       timeout-ms: 60000
-      models: [typhoon-v2.1-12b-instruct, typhoon-v2-70b-instruct, typhoon-v2-8b-instruct]
+      models: [typhoon-v2.1-12b-instruct, typhoon-v2-70b-instruct, typhoon-v2-8b-instruct, typhoon-ocr]
 
   # ─── Routes: how to pick a provider for each request ─────────────────────
   # First match wins. Put specific matches first, catch-all last.

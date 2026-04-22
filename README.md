@@ -12,6 +12,7 @@ Phase 1 MVP:
 
 - `POST /v1/chat/completions` (non-streaming)
 - `POST /v1/embeddings`
+- `POST /v1/ocr` (image → text; routed via model name, e.g. `typhoon-ocr`)
 - `GET  /v1/models`
 - Router with primary + fallback chain; first-match-wins
 - Provider adapters: OpenAI, Anthropic (request/response translation), and
@@ -54,6 +55,16 @@ curl -X POST http://localhost:8080/v1/chat/completions \
           {"role":"system","content":"You are helpful."},
           {"role":"user","content":"Hello"}
         ]
+      }'
+
+# 6a. OCR (defaults to model "typhoon-ocr"; accepts data: URI, https URL, or raw base64)
+curl -X POST http://localhost:8080/v1/ocr \
+  -H "Authorization: Bearer mgw_test_devkey_DO_NOT_USE_IN_PROD" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "model": "typhoon-ocr",
+        "image": "data:image/png;base64,iVBORw0KGgo...",
+        "prompt": "Extract all text as Markdown"
       }'
 
 # 6. List configured models

@@ -8,6 +8,8 @@ import com.muxai.gateway.provider.model.ChatRequest;
 import com.muxai.gateway.provider.model.ChatResponse;
 import com.muxai.gateway.provider.model.EmbeddingRequest;
 import com.muxai.gateway.provider.model.EmbeddingResponse;
+import com.muxai.gateway.provider.model.OcrRequest;
+import com.muxai.gateway.provider.model.OcrResponse;
 import org.springframework.core.io.buffer.DataBufferLimitException;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.web.reactive.function.client.WebClient;
@@ -15,6 +17,8 @@ import reactor.core.publisher.Mono;
 
 import java.net.ConnectException;
 import java.time.Duration;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeoutException;
 
 public class OpenAiProvider implements LlmProvider {
@@ -66,6 +70,44 @@ public class OpenAiProvider implements LlmProvider {
                         .onStatus(HttpStatusCode::isError, this::mapErrorStatus)
                         .bodyToMono(EmbeddingResponse.class))
                 .timeout(Duration.ofMillis(props.timeoutMsOrDefault()))
+                .onErrorMap(this::translate);
+    }
+
+    @Override
+    public Mono<OcrResponse> ocr(OcrRequest request) {
+        String prompt = (request.prompt() == null || request.prompt().isBlank())
+                ? "Extract all text from this image and return it as Markdown, preserving layout where possible."
+                : request.prompt();
+        double temperature = request.temperature() != null ? request.temperature() : 0.1;
+
+        Map<String, Object> payload = Map.of(
+                "model", request.model(),
+                "temperature", temperature,
+                "messages", List.of(Map.of(
+                        "role", "user",
+                        "content", List.of(
+                                Map.of("type", "text", "text", prompt),
+                                Map.of("type", "image_url",
+                                        "image_url", Map.of("url", request.imageUrl()))))));
+
+        return guardApiKey()
+                .then(http.post()
+                        .uri("/chat/completions")
+                        .bodyValue(payload)
+                        .retrieve()
+                        .onStatus(HttpStatusCode::isError, this::mapErrorStatus)
+                        .bodyToMono(ChatResponse.class))
+                .timeout(Duration.ofMillis(props.timeoutMsOrDefault()))
+                .map(resp -> {
+                    String text = (resp.choices() == null || resp.choices().isEmpty()
+                            || resp.choices().get(0).message() == null)
+                            ? ""
+                            : resp.choices().get(0).message().content();
+                    return new OcrResponse(
+                            resp.model() != null ? resp.model() : request.model(),
+                            text,
+                            resp.usage());
+                })
                 .onErrorMap(this::translate);
     }
 
