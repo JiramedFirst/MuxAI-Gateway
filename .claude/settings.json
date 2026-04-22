@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "WebFetch(domain:raw.githubusercontent.com)",
-      "Bash(curl -sL \"https://api.github.com/repos/scb-10x/typhoon-ocr/contents/packages/typhoon_ocr/typhoon_ocr\")"
-    ]
-  }
-}

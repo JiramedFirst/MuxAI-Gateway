@@ -1,8 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "WebFetch(domain:docs.opentyphoon.ai)",
-      "WebFetch(domain:github.com)"
-    ]
-  }
-}
