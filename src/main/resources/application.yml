@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: muxai-gateway
+  threads:
+    virtual:
+      enabled: true
+  config:
+    import:
+      - optional:file:./config/providers.yml
+      - optional:classpath:providers.yml
+
+server:
+  port: 8080
+  tomcat:
+    connection-timeout: 120s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    distribution:
+      percentiles-histogram:
+        muxai.provider.call: true
+
+logging:
+  level:
+    com.muxai.gateway: INFO
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
