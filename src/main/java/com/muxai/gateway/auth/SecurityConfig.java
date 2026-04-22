@@ -2,6 +2,7 @@ package com.muxai.gateway.auth;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.muxai.gateway.config.GatewayProperties;
+import com.muxai.gateway.observability.RequestIdFilter;
 import com.muxai.gateway.observability.RequestMetrics;
 import com.muxai.gateway.ratelimit.RateLimitFilter;
 import com.muxai.gateway.ratelimit.RateLimiter;
@@ -17,6 +18,23 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 @Configuration
 public class SecurityConfig {
+
+    @Bean
+    public RequestIdFilter requestIdFilter() {
+        return new RequestIdFilter();
+    }
+
+    // Register RequestIdFilter at the container level so it also wraps static
+    // resources, actuator endpoints, and the error dispatch — anything that
+    // produces a log line benefits from MDC correlation, not just secured paths.
+    @Bean
+    public FilterRegistrationBean<RequestIdFilter> requestIdFilterRegistration(
+            RequestIdFilter filter) {
+        FilterRegistrationBean<RequestIdFilter> reg = new FilterRegistrationBean<>(filter);
+        reg.setOrder(Integer.MIN_VALUE);
+        reg.addUrlPatterns("/*");
+        return reg;
+    }
 
     @Bean
     public ApiKeyAuthFilter apiKeyAuthFilter(GatewayProperties props,

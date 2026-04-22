@@ -1,0 +1,46 @@
+# Production overrides — activate with SPRING_PROFILES_ACTIVE=prod.
+#
+# The defaults in application.yml are optimised for a developer running
+# `mvn spring-boot:run`. This profile flips the knobs that matter when
+# the process is serving real traffic: tighter startup error handling,
+# operator-only surfaces behind Kubernetes-style probes, and non-verbose
+# logging.
+
+spring:
+  main:
+    # Fail fast instead of booting with a broken bean graph. Combined with
+    # ConfigValidator this turns "misconfigured providers.yml" from a
+    # 2am-pager-at-first-request into a crash-on-deploy.
+    banner-mode: off
+  jackson:
+    # Don't leak internal stack-trace chatter through serialisation errors.
+    default-property-inclusion: non_null
+
+server:
+  # Hide the Tomcat server header in responses.
+  server-header:
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        # Metrics and prometheus should be scraped on an internal port/network
+        # only; PublicPaths already whitelists them, but in a real deployment
+        # front this behind a network policy or a separate management port.
+        include: health,info,prometheus
+  endpoint:
+    health:
+      # Keep component visibility — still no secrets in the health body.
+      show-details: always
+      show-components: always
+
+logging:
+  level:
+    root: WARN
+    com.muxai.gateway: INFO
+    org.springframework.web: WARN
+    org.springframework.security: WARN

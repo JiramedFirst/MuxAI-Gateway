@@ -1,0 +1,34 @@
+# Build artefacts — regenerated inside the build stage.
+target/
+**/target/
+*.jar
+*.war
+
+# IDE / editor
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# Local environment — must never leak into the image.
+.env
+.env.*
+**/secrets.yml
+**/application-local.yml
+
+# Git & CI metadata — not needed at runtime and balloons the build context.
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# OS scratch files
+.DS_Store
+Thumbs.db
+
+# Logs / tmp dirs
+logs/
+tmp/
+*.log

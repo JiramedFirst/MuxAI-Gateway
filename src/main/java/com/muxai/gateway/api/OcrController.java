@@ -2,10 +2,12 @@ package com.muxai.gateway.api;
 
 import com.muxai.gateway.api.dto.OcrApiRequest;
 import com.muxai.gateway.auth.AppPrincipal;
+import com.muxai.gateway.observability.RequestContext;
 import com.muxai.gateway.observability.RequestMetrics;
 import com.muxai.gateway.provider.ProviderException;
 import com.muxai.gateway.provider.model.OcrResponse;
 import com.muxai.gateway.router.Router;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -16,7 +18,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Duration;
 import java.util.Objects;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/v1")
@@ -34,8 +35,9 @@ public class OcrController {
 
     @PostMapping("/ocr")
     public ResponseEntity<?> ocr(@Valid @RequestBody OcrApiRequest body,
-                                 @AuthenticationPrincipal AppPrincipal principal) {
-        String requestId = UUID.randomUUID().toString();
+                                 @AuthenticationPrincipal AppPrincipal principal,
+                                 HttpServletRequest http) {
+        String requestId = RequestContext.requestId(http);
         String appId = principal != null ? principal.appId() : "unknown";
 
         long start = System.nanoTime();
