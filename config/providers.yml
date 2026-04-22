@@ -1,0 +1,68 @@
+# MuxAI Gateway — provider & routing configuration.
+#
+# Routes are tried top-to-bottom; FIRST MATCH WINS.
+# Order specific rules before general rules. No specificity scoring.
+muxai:
+
+  # ─── Providers: the backends we can call ─────────────────────────────────
+  providers:
+
+    - id: openai-main
+      type: openai
+      base-url: https://api.openai.com/v1
+      api-key: ${OPENAI_API_KEY:}
+      timeout-ms: 60000
+      models: [gpt-4o, gpt-4o-mini, text-embedding-3-small]
+
+    - id: anthropic-main
+      type: anthropic
+      base-url: https://api.anthropic.com/v1
+      api-key: ${ANTHROPIC_API_KEY:}
+      timeout-ms: 60000
+      models: [claude-opus-4-7, claude-sonnet-4-6, claude-haiku-4-5]
+
+    # Ollama speaks OpenAI format natively — type: openai with local URL.
+    - id: ollama-local
+      type: openai
+      base-url: http://localhost:11434/v1
+      api-key: ollama-not-needed
+      timeout-ms: 120000
+      models: [llama3.3, qwen2.5-coder, nomic-embed-text]
+
+  # ─── Routes: how to pick a provider for each request ─────────────────────
+  # First match wins. Put specific matches first, catch-all last.
+  routes:
+
+    - match: {model: "smart"}                # virtual model name
+      primary:   {provider: openai-main,   model: gpt-4o}
+      fallback:
+        - {provider: anthropic-main, model: claude-sonnet-4-6}
+
+    - match: {model: "cheap"}
+      primary:   {provider: ollama-local,  model: llama3.3}
+      fallback:
+        - {provider: openai-main, model: gpt-4o-mini}
+
+    - match: {app-id: "hr-app"}              # HR app: never leave self-hosted
+      primary:   {provider: ollama-local,  model: llama3.3}
+
+    - match: {model: "claude-*"}             # glob
+      primary:   {provider: anthropic-main}
+
+    - match: {model: "gpt-*"}
+      primary:   {provider: openai-main}
+
+    - match: {model: "text-embedding-*"}
+      primary:   {provider: openai-main}
+
+    - primary: {provider: openai-main}       # catch-all (no match => matches everything)
+
+  # ─── API keys ────────────────────────────────────────────────────────────
+  api-keys:
+    - key: mgw_test_devkey_DO_NOT_USE_IN_PROD
+      app-id: dev
+      rate-limit-per-min: 1000
+
+    - key: mgw_hr_CHANGE_ME
+      app-id: hr-app
+      rate-limit-per-min: 60
