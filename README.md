@@ -113,8 +113,8 @@ specific rules before general ones.
 
 ## Adding an OpenAI-compatible backend
 
-Ollama, vLLM, LocalAI, Groq, Together, DeepSeek, Mistral — they all accept
-the same JSON that OpenAI does, so they all use `type: openai`:
+Ollama, vLLM, LocalAI, Groq, Together, DeepSeek, Mistral, OpenTyphoon — they
+all accept the same JSON that OpenAI does, so they all use `type: openai`:
 
 ```yaml
 - id: ollama-local
