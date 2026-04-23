@@ -2,6 +2,7 @@ package com.muxai.gateway.hotreload;
 
 import com.muxai.gateway.config.ConfigValidator;
 import com.muxai.gateway.config.GatewayProperties;
+import com.muxai.gateway.observability.RequestMetrics;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
@@ -41,13 +42,15 @@ public class ConfigWatcher {
 
     private final HotReloadProperties props;
     private final ConfigRuntime runtime;
+    private final RequestMetrics metrics;
 
     private ScheduledExecutorService scheduler;
     private volatile long lastModifiedMillis;
 
-    public ConfigWatcher(HotReloadProperties props, ConfigRuntime runtime) {
+    public ConfigWatcher(HotReloadProperties props, ConfigRuntime runtime, RequestMetrics metrics) {
         this.props = props;
         this.runtime = runtime;
+        this.metrics = metrics;
     }
 
     @PostConstruct
@@ -55,13 +58,13 @@ public class ConfigWatcher {
         if (!props.enabledOrDefault()) return;
         Path path = Paths.get(props.pathOrDefault());
         if (!Files.exists(path)) {
-            log.warn("hot-reload path does not exist, disabling: {}", path);
+            log.warn("config hot-reload disabled outcome=missing_path path={}", path);
             return;
         }
         try {
             lastModifiedMillis = Files.getLastModifiedTime(path).toMillis();
         } catch (IOException e) {
-            log.warn("hot-reload initial mtime read failed: {}", e.getMessage());
+            log.warn("config hot-reload disabled outcome=io_error reason=\"{}\"", e.getMessage());
             return;
         }
         scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -71,7 +74,7 @@ public class ConfigWatcher {
         });
         long interval = props.intervalMsOrDefault();
         scheduler.scheduleAtFixedRate(this::check, interval, interval, TimeUnit.MILLISECONDS);
-        log.info("config hot-reload enabled: path={} interval_ms={}", path, interval);
+        log.info("config hot-reload enabled path={} interval_ms={}", path, interval);
     }
 
     @PreDestroy
@@ -80,24 +83,46 @@ public class ConfigWatcher {
     }
 
     void check() {
+        Path path = Paths.get(props.pathOrDefault());
+        if (!Files.exists(path)) return;
+
+        long mt;
+        byte[] yaml;
         try {
-            Path path = Paths.get(props.pathOrDefault());
-            if (!Files.exists(path)) return;
-            long mt = Files.getLastModifiedTime(path).toMillis();
+            mt = Files.getLastModifiedTime(path).toMillis();
             if (mt == lastModifiedMillis) return;
-            GatewayProperties parsed = parseAndBind(Files.readAllBytes(path));
-            try {
-                new ConfigValidator(parsed).validate();
-            } catch (IllegalStateException bad) {
-                log.warn("hot-reload rejected — config invalid, keeping previous: {}", bad.getMessage());
-                lastModifiedMillis = mt;
-                return;
-            }
-            runtime.replace(parsed);
-            lastModifiedMillis = mt;
-        } catch (Exception e) {
-            log.warn("hot-reload tick failed: {}", e.getMessage());
+            yaml = Files.readAllBytes(path);
+        } catch (IOException e) {
+            log.warn("config hot-reload outcome=io_error reason=\"{}\"", e.getMessage());
+            metrics.recordConfigReload("io_error");
+            return;
         }
+
+        GatewayProperties parsed;
+        try {
+            parsed = parseAndBind(yaml);
+        } catch (Exception e) {
+            // Advance mtime so a single corrupt save doesn't spam the log every tick;
+            // the next distinct edit will retry.
+            lastModifiedMillis = mt;
+            log.warn("config hot-reload outcome=parse_failed reason=\"{}\"", e.getMessage());
+            metrics.recordConfigReload("parse_failed");
+            return;
+        }
+
+        try {
+            new ConfigValidator(parsed).validate();
+        } catch (IllegalStateException bad) {
+            // Same rationale as parse_failed: advance mtime to avoid per-tick log spam.
+            lastModifiedMillis = mt;
+            log.warn("config hot-reload outcome=invalid reason=\"{}\"", bad.getMessage());
+            metrics.recordConfigReload("invalid");
+            return;
+        }
+
+        runtime.replace(parsed);
+        lastModifiedMillis = mt;
+        metrics.recordConfigReload("success");
     }
 
     /**
