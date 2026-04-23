@@ -74,6 +74,20 @@ HTTP → RequestIdFilter → ApiKeyAuthFilter → RateLimitFilter
    translate to/from the provider's native wire format and map HTTP/network
    errors to `ProviderException.Code`.
 
+`EmbeddingController` (`/v1/embeddings`), `OcrController` (`/v1/ocr`), and
+`ModelsController` (`/v1/models`) share the same auth + rate-limit prefix but
+skip PII/cache (neither is cacheable today, and OCR input is binary). Add new
+endpoints by composing the same filter chain — don't bypass
+`ApiKeyAuthFilter`. `GlobalExceptionHandler` converts every thrown exception
+to an OpenAI-shaped `{error:{message,type,code}}` body so clients written
+against OpenAI SDKs don't need gateway-specific error paths.
+
+`AdminController` exposes `GET /admin/api/overview` (providers, routes,
+api-keys — all with secrets masked via `AdminController.mask`) for the static
+dashboard served from `resources/static/admin/`. `/admin/**` is in
+`PublicPaths.PATTERNS`, so treat it as read-only and keep secrets masked
+before serialising.
+
 ### Internal model is OpenAI-shaped
 
 The `provider.model` package (`ChatRequest`, `ChatMessage`, `ToolCall`, `Tool`,
@@ -200,7 +214,9 @@ here rather than in each consumer.
 - Prometheus metrics: `muxai_request_total`, `muxai_provider_call` (timer
   with `app_id`/`provider_id`/`outcome` tags), `muxai_tokens_total`,
   `muxai_cache_hit_total`/`_miss_total`, `muxai_pii_redacted_total`,
-  `muxai_request_rate_limited_total`.
+  `muxai_request_rate_limited_total`, `muxai_config_reload_total` (tagged
+  `outcome=success|invalid|parse_failed|io_error|listener_error` — alerts
+  should fire on anything but `success`).
 - `ProvidersHealthIndicator` exposes provider inventory under
   `/actuator/health` and is included in the readiness probe group.
 
@@ -224,5 +240,5 @@ here rather than in each consumer.
 
 ## Git workflow
 
-Active development branch for this session: `claude/add-claude-documentation-qldcq`.
+Active development branch for this session: `claude/add-claude-documentation-vnsaa`.
 Push there; PRs merge into `main`. Always open PRs as draft.
