@@ -56,7 +56,7 @@ class ConfigRuntimeTest {
         GatewayProperties updated = new GatewayProperties(
                 List.of(),
                 List.of(new RouteProperties(null,
-                        new RouteProperties.Step("p1", null), List.of())),
+                        new RouteProperties.Step("p1", null), List.of(), null)),
                 List.of());
         runtime.replace(updated);
 

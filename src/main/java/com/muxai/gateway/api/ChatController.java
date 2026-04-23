@@ -6,6 +6,7 @@ import com.muxai.gateway.api.dto.OpenAiChatRequest;
 import com.muxai.gateway.auth.AppPrincipal;
 import com.muxai.gateway.auth.ModelScopeGuard;
 import com.muxai.gateway.cache.SemanticCache;
+import com.muxai.gateway.cost.BudgetGuard;
 import com.muxai.gateway.observability.RequestContext;
 import com.muxai.gateway.observability.RequestMetrics;
 import com.muxai.gateway.pii.PiiRedactor;
@@ -42,19 +43,22 @@ public class ChatController {
     private final PiiRedactor piiRedactor;
     private final SemanticCache cache;
     private final ModelScopeGuard modelScopeGuard;
+    private final BudgetGuard budgetGuard;
 
     public ChatController(Router router,
                           RequestMetrics metrics,
                           ObjectMapper mapper,
                           PiiRedactor piiRedactor,
                           SemanticCache cache,
-                          ModelScopeGuard modelScopeGuard) {
+                          ModelScopeGuard modelScopeGuard,
+                          BudgetGuard budgetGuard) {
         this.router = router;
         this.metrics = metrics;
         this.mapper = mapper;
         this.piiRedactor = piiRedactor;
         this.cache = cache;
         this.modelScopeGuard = modelScopeGuard;
+        this.budgetGuard = budgetGuard;
     }
 
     @PostMapping("/chat/completions")
@@ -62,6 +66,7 @@ public class ChatController {
                        @AuthenticationPrincipal AppPrincipal principal,
                        HttpServletRequest http) {
         modelScopeGuard.check(principal, body.model());
+        budgetGuard.check(principal);
         String requestId = RequestContext.requestId(http);
         String appId = principal != null ? principal.appId() : "unknown";
         ChatRequest internal = piiRedactor.redact(body.toInternal());
@@ -79,7 +84,7 @@ public class ChatController {
             metrics.recordCacheHit(appId, ENDPOINT);
             log.info("request_id={} app_id={} endpoint={} model_requested={} cache=hit",
                     requestId, appId, ENDPOINT, requestedModel);
-            return ResponseEntity.ok(cached);
+            return ResponseEntity.ok(piiRedactor.redactResponse(cached));
         }
 
         long start = System.nanoTime();
@@ -91,8 +96,11 @@ public class ChatController {
             long latencyMs = (System.nanoTime() - start) / 1_000_000L;
             metrics.recordSuccess(requestId, appId, ENDPOINT, requestedModel, result,
                     latencyMs, result.response().usage());
+            // Cache the un-scrubbed response — outbound redaction is a render-time
+            // concern and shouldn't pollute the cache for callers who later opt out.
             cache.store(internal, result.response());
-            return ResponseEntity.ok(result.response());
+            ChatResponse out = piiRedactor.redactResponse(result.response());
+            return ResponseEntity.ok(out);
         } catch (ProviderException pe) {
             long latencyMs = (System.nanoTime() - start) / 1_000_000L;
             metrics.recordFailure(requestId, appId, ENDPOINT, requestedModel, latencyMs, pe);

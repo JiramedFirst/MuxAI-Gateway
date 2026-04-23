@@ -1,5 +1,7 @@
 package com.muxai.gateway.observability;
 
+import com.muxai.gateway.cost.BudgetGuard;
+import com.muxai.gateway.cost.PricingTable;
 import com.muxai.gateway.provider.ProviderException;
 import com.muxai.gateway.provider.model.Usage;
 import com.muxai.gateway.router.Router;
@@ -10,6 +12,7 @@ import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.TimeUnit;
@@ -20,10 +23,37 @@ public class RequestMetrics {
     private static final Logger log = LoggerFactory.getLogger(RequestMetrics.class);
 
     private final MeterRegistry registry;
+    // ObjectProvider (lazy) resolution for PricingTable + BudgetGuard breaks the
+    // otherwise-circular dependency ConfigRuntime -> RequestMetrics -> PricingTable
+    // -> ConfigRuntime. Both are resolved on every cost-recording call; null-safe
+    // when absent (tests or bootstrap ordering).
+    private final ObjectProvider<PricingTable> pricingTableProvider;
+    private final ObjectProvider<BudgetGuard> budgetGuardProvider;
 
     public RequestMetrics(MeterRegistry registry) {
-        this.registry = registry;
+        this(registry, emptyProvider(), emptyProvider());
     }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public RequestMetrics(MeterRegistry registry,
+                          ObjectProvider<PricingTable> pricingTableProvider,
+                          ObjectProvider<BudgetGuard> budgetGuardProvider) {
+        this.registry = registry;
+        this.pricingTableProvider = pricingTableProvider;
+        this.budgetGuardProvider = budgetGuardProvider;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> ObjectProvider<T> emptyProvider() {
+        return (ObjectProvider<T>) EMPTY_PROVIDER;
+    }
+
+    private static final ObjectProvider<Object> EMPTY_PROVIDER = new ObjectProvider<>() {
+        @Override public Object getObject(Object... args) { return null; }
+        @Override public Object getObject() { return null; }
+        @Override public Object getIfAvailable() { return null; }
+        @Override public Object getIfUnique() { return null; }
+    };
 
     public void recordRequest(String appId, String route, String outcome) {
         Counter.builder("muxai.request.total")
@@ -56,6 +86,34 @@ public class RequestMetrics {
                         Tag.of("direction", safe(direction))))
                 .register(registry)
                 .increment(count);
+    }
+
+    /**
+     * Record per-request USD cost computed from the provider's declared per-million
+     * pricing in providers.yml. No-op when no pricing is wired (test contexts) or
+     * when the (provider, model) pair has no declared rate.
+     */
+    public void recordCost(String appId, String providerId, String model,
+                           long promptTokens, long completionTokens) {
+        PricingTable pricing = pricingTableProvider.getIfAvailable();
+        if (pricing == null) return;
+        double usd = pricing.usdFor(providerId, model, promptTokens, completionTokens);
+        if (usd <= 0.0) return;
+        Counter.builder("muxai.cost.usd.total")
+                .description("Cumulative provider spend in USD, attributed by app/provider/model")
+                .baseUnit("USD")
+                .tags(Tags.of(
+                        Tag.of("app_id", safe(appId)),
+                        Tag.of("provider_id", safe(providerId)),
+                        Tag.of("model", safe(model))))
+                .register(registry)
+                .increment(usd);
+        // Always update the budget tally — even when budget enforcement is off,
+        // operators can dry-run caps before flipping the switch.
+        BudgetGuard budget = budgetGuardProvider.getIfAvailable();
+        if (budget != null) {
+            budget.record(appId, usd);
+        }
     }
 
     /**
@@ -137,6 +195,8 @@ public class RequestMetrics {
         if (result.providerSucceeded() != null) {
             recordTokens(result.providerSucceeded(), result.modelActual(), "prompt", promptTokens);
             recordTokens(result.providerSucceeded(), result.modelActual(), "completion", completionTokens);
+            recordCost(appId, result.providerSucceeded(), result.modelActual(),
+                    promptTokens, completionTokens);
         }
 
         log.info("request_id={} app_id={} endpoint={} model_requested={} route_matched={} " +

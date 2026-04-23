@@ -20,7 +20,8 @@ public record PiiProperties(
         Boolean phone,
         Boolean creditCard,
         Boolean ssn,
-        Boolean ipv4
+        Boolean ipv4,
+        Outbound outbound
 ) {
     public boolean enabledOrDefault() { return Boolean.TRUE.equals(enabled); }
     public boolean emailEnabled() { return enabledOrDefault() && !Boolean.FALSE.equals(email); }
@@ -28,4 +29,18 @@ public record PiiProperties(
     public boolean creditCardEnabled() { return enabledOrDefault() && !Boolean.FALSE.equals(creditCard); }
     public boolean ssnEnabled() { return enabledOrDefault() && !Boolean.FALSE.equals(ssn); }
     public boolean ipv4Enabled() { return enabledOrDefault() && !Boolean.FALSE.equals(ipv4); }
+
+    /**
+     * Outbound (response) scrubbing currently runs on blocking chat responses
+     * only. Streaming responses are NOT scrubbed yet — patterns split across
+     * SSE chunk boundaries defeat the regex without a sliding-window design.
+     * Defaults to disabled even when {@link #enabled} is true so existing
+     * deployments that opt into inbound PII don't suddenly start mutating
+     * provider responses.
+     */
+    public boolean outboundEnabled() {
+        return enabledOrDefault() && outbound != null && Boolean.TRUE.equals(outbound.enabled());
+    }
+
+    public record Outbound(Boolean enabled) {}
 }

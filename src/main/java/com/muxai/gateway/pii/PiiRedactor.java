@@ -3,6 +3,7 @@ package com.muxai.gateway.pii;
 import com.muxai.gateway.observability.RequestMetrics;
 import com.muxai.gateway.provider.model.ChatMessage;
 import com.muxai.gateway.provider.model.ChatRequest;
+import com.muxai.gateway.provider.model.ChatResponse;
 import com.muxai.gateway.provider.model.ContentPart;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,6 +54,8 @@ public class PiiRedactor {
 
     public boolean enabled() { return props.enabledOrDefault(); }
 
+    public boolean outboundEnabled() { return props.outboundEnabled(); }
+
     public ChatRequest redact(ChatRequest request) {
         if (!props.enabledOrDefault() || request.messages() == null) return request;
 
@@ -64,6 +67,35 @@ public class PiiRedactor {
             redacted.add(r);
         }
         return changed ? request.withMessages(redacted) : request;
+    }
+
+    /**
+     * Scrub PII from a blocking chat response. Streaming responses are NOT
+     * handled here — patterns can span chunk boundaries (a credit card
+     * split across two SSE events would slip past per-chunk regex), so the
+     * sliding-window design that handles streaming lands in a later sprint.
+     *
+     * No-op when {@link PiiProperties#outboundEnabled()} is false (the default).
+     */
+    public ChatResponse redactResponse(ChatResponse response) {
+        if (!props.outboundEnabled() || response == null || response.choices() == null) return response;
+        List<ChatResponse.Choice> redacted = new ArrayList<>(response.choices().size());
+        boolean changed = false;
+        for (ChatResponse.Choice c : response.choices()) {
+            ChatResponse.Choice r = redactChoice(c);
+            if (r != c) changed = true;
+            redacted.add(r);
+        }
+        if (!changed) return response;
+        return new ChatResponse(response.id(), response.object(), response.created(),
+                response.model(), redacted, response.usage());
+    }
+
+    private ChatResponse.Choice redactChoice(ChatResponse.Choice c) {
+        if (c == null || c.message() == null) return c;
+        ChatMessage redactedMsg = redactMessage(c.message());
+        if (redactedMsg == c.message()) return c;
+        return new ChatResponse.Choice(c.index(), redactedMsg, c.finishReason());
     }
 
     public String redactText(String text) {

@@ -14,12 +14,15 @@ import com.muxai.gateway.provider.model.OcrRequest;
 import com.muxai.gateway.provider.model.OcrResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Component
@@ -30,11 +33,22 @@ public class Router {
     private final RouteMatcher matcher;
     private final ProviderRegistry.Lookup providers;
     private final RequestMetrics metrics;
+    private final Map<String, RouteSelector> selectorsByName;
 
     public Router(RouteMatcher matcher, ProviderRegistry.Lookup providers, RequestMetrics metrics) {
+        this(matcher, providers, metrics, List.of());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public Router(RouteMatcher matcher, ProviderRegistry.Lookup providers, RequestMetrics metrics,
+                  List<RouteSelector> selectors) {
         this.matcher = matcher;
         this.providers = providers;
         this.metrics = metrics;
+        Map<String, RouteSelector> map = new HashMap<>();
+        map.put(RouteSelector.PRIMARY_FIRST.name(), RouteSelector.PRIMARY_FIRST);
+        for (RouteSelector s : selectors) map.put(s.name(), s);
+        this.selectorsByName = Map.copyOf(map);
     }
 
     public Mono<RoutedResult<ChatResponse>> routeChat(ChatRequest request, String appId) {
@@ -124,10 +138,16 @@ public class Router {
     }
 
     private List<RouteProperties.Step> buildChain(RouteDecision decision) {
-        List<RouteProperties.Step> chain = new ArrayList<>();
-        chain.add(decision.primary());
-        chain.addAll(decision.fallback());
-        return chain;
+        String strategyName = decision.source() != null
+                ? decision.source().strategyOrDefault()
+                : "primary-first";
+        RouteSelector selector = selectorsByName.get(strategyName);
+        if (selector == null) {
+            log.warn("Unknown route strategy '{}' on {} — falling back to primary-first",
+                    strategyName, decision.description());
+            selector = RouteSelector.PRIMARY_FIRST;
+        }
+        return new ArrayList<>(selector.orderChain(decision));
     }
 
     private Mono<ChatResponse> attemptChat(

@@ -23,7 +23,7 @@ class RouteMatcherTest {
         return new RouteProperties(
                 new RouteProperties.Match(appId, modelPattern),
                 new RouteProperties.Step(provider, null),
-                List.of());
+                List.of(), null);
     }
 
     @Test

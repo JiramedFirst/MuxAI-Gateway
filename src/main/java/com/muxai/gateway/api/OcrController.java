@@ -3,6 +3,7 @@ package com.muxai.gateway.api;
 import com.muxai.gateway.api.dto.OcrApiRequest;
 import com.muxai.gateway.auth.AppPrincipal;
 import com.muxai.gateway.auth.ModelScopeGuard;
+import com.muxai.gateway.cost.BudgetGuard;
 import com.muxai.gateway.observability.RequestContext;
 import com.muxai.gateway.observability.RequestMetrics;
 import com.muxai.gateway.provider.ProviderException;
@@ -29,11 +30,14 @@ public class OcrController {
     private final Router router;
     private final RequestMetrics metrics;
     private final ModelScopeGuard modelScopeGuard;
+    private final BudgetGuard budgetGuard;
 
-    public OcrController(Router router, RequestMetrics metrics, ModelScopeGuard modelScopeGuard) {
+    public OcrController(Router router, RequestMetrics metrics,
+                         ModelScopeGuard modelScopeGuard, BudgetGuard budgetGuard) {
         this.router = router;
         this.metrics = metrics;
         this.modelScopeGuard = modelScopeGuard;
+        this.budgetGuard = budgetGuard;
     }
 
     @PostMapping("/ocr")
@@ -41,6 +45,7 @@ public class OcrController {
                                  @AuthenticationPrincipal AppPrincipal principal,
                                  HttpServletRequest http) {
         modelScopeGuard.check(principal, body.model());
+        budgetGuard.check(principal);
         String requestId = RequestContext.requestId(http);
         String appId = principal != null ? principal.appId() : "unknown";
 
