@@ -1,5 +1,7 @@
 package com.muxai.gateway.observability;
 
+import com.muxai.gateway.cost.BudgetGuard;
+import com.muxai.gateway.cost.PricingTable;
 import com.muxai.gateway.provider.ProviderException;
 import com.muxai.gateway.provider.model.Usage;
 import com.muxai.gateway.router.Router;
@@ -20,9 +22,20 @@ public class RequestMetrics {
     private static final Logger log = LoggerFactory.getLogger(RequestMetrics.class);
 
     private final MeterRegistry registry;
+    // Both nullable: tests construct RequestMetrics directly without these
+    // collaborators. When null, cost recording / budget tracking are no-ops.
+    private final PricingTable pricingTable;
+    private final BudgetGuard budgetGuard;
 
     public RequestMetrics(MeterRegistry registry) {
+        this(registry, null, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public RequestMetrics(MeterRegistry registry, PricingTable pricingTable, BudgetGuard budgetGuard) {
         this.registry = registry;
+        this.pricingTable = pricingTable;
+        this.budgetGuard = budgetGuard;
     }
 
     public void recordRequest(String appId, String route, String outcome) {
@@ -56,6 +69,32 @@ public class RequestMetrics {
                         Tag.of("direction", safe(direction))))
                 .register(registry)
                 .increment(count);
+    }
+
+    /**
+     * Record per-request USD cost computed from the provider's declared per-million
+     * pricing in providers.yml. No-op when no pricing is wired (test contexts) or
+     * when the (provider, model) pair has no declared rate.
+     */
+    public void recordCost(String appId, String providerId, String model,
+                           long promptTokens, long completionTokens) {
+        if (pricingTable == null) return;
+        double usd = pricingTable.usdFor(providerId, model, promptTokens, completionTokens);
+        if (usd <= 0.0) return;
+        Counter.builder("muxai.cost.usd.total")
+                .description("Cumulative provider spend in USD, attributed by app/provider/model")
+                .baseUnit("USD")
+                .tags(Tags.of(
+                        Tag.of("app_id", safe(appId)),
+                        Tag.of("provider_id", safe(providerId)),
+                        Tag.of("model", safe(model))))
+                .register(registry)
+                .increment(usd);
+        // Always update the budget tally — even when budget enforcement is off,
+        // operators can dry-run caps before flipping the switch.
+        if (budgetGuard != null) {
+            budgetGuard.record(appId, usd);
+        }
     }
 
     /**
@@ -137,6 +176,8 @@ public class RequestMetrics {
         if (result.providerSucceeded() != null) {
             recordTokens(result.providerSucceeded(), result.modelActual(), "prompt", promptTokens);
             recordTokens(result.providerSucceeded(), result.modelActual(), "completion", completionTokens);
+            recordCost(appId, result.providerSucceeded(), result.modelActual(),
+                    promptTokens, completionTokens);
         }
 
         log.info("request_id={} app_id={} endpoint={} model_requested={} route_matched={} " +

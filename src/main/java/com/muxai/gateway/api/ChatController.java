@@ -6,6 +6,7 @@ import com.muxai.gateway.api.dto.OpenAiChatRequest;
 import com.muxai.gateway.auth.AppPrincipal;
 import com.muxai.gateway.auth.ModelScopeGuard;
 import com.muxai.gateway.cache.SemanticCache;
+import com.muxai.gateway.cost.BudgetGuard;
 import com.muxai.gateway.observability.RequestContext;
 import com.muxai.gateway.observability.RequestMetrics;
 import com.muxai.gateway.pii.PiiRedactor;
@@ -42,19 +43,22 @@ public class ChatController {
     private final PiiRedactor piiRedactor;
     private final SemanticCache cache;
     private final ModelScopeGuard modelScopeGuard;
+    private final BudgetGuard budgetGuard;
 
     public ChatController(Router router,
                           RequestMetrics metrics,
                           ObjectMapper mapper,
                           PiiRedactor piiRedactor,
                           SemanticCache cache,
-                          ModelScopeGuard modelScopeGuard) {
+                          ModelScopeGuard modelScopeGuard,
+                          BudgetGuard budgetGuard) {
         this.router = router;
         this.metrics = metrics;
         this.mapper = mapper;
         this.piiRedactor = piiRedactor;
         this.cache = cache;
         this.modelScopeGuard = modelScopeGuard;
+        this.budgetGuard = budgetGuard;
     }
 
     @PostMapping("/chat/completions")
@@ -62,6 +66,7 @@ public class ChatController {
                        @AuthenticationPrincipal AppPrincipal principal,
                        HttpServletRequest http) {
         modelScopeGuard.check(principal, body.model());
+        budgetGuard.check(principal);
         String requestId = RequestContext.requestId(http);
         String appId = principal != null ? principal.appId() : "unknown";
         ChatRequest internal = piiRedactor.redact(body.toInternal());

@@ -3,6 +3,7 @@ package com.muxai.gateway;
 import com.muxai.gateway.admin.AdminProperties;
 import com.muxai.gateway.cache.CacheProperties;
 import com.muxai.gateway.config.GatewayProperties;
+import com.muxai.gateway.cost.BudgetProperties;
 import com.muxai.gateway.hotreload.HotReloadProperties;
 import com.muxai.gateway.pii.PiiProperties;
 import com.muxai.gateway.ratelimit.RateLimitProperties;
@@ -17,7 +18,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
         CacheProperties.class,
         HotReloadProperties.class,
         RateLimitProperties.class,
-        AdminProperties.class
+        AdminProperties.class,
+        BudgetProperties.class
 })
 public class MuxaiApplication {
     public static void main(String[] args) {

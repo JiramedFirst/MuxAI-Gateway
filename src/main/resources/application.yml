@@ -63,6 +63,13 @@ muxai:
     # every reload so a pending rotation survives mtime changes elsewhere.
     runtime-keys-path: ./config/runtime-keys.yml
 
+  budget:
+    # When enabled, requests are rejected with 429 + type:budget_exceeded once
+    # an app has spent more than its configured ApiKey.dailyBudgetUsd today
+    # (UTC). Cost is recorded regardless of this flag so operators can
+    # dry-run caps before flipping the switch.
+    enabled: false
+
   pii:
     enabled: false
     email: true

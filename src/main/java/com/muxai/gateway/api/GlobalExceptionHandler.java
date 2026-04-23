@@ -2,6 +2,7 @@ package com.muxai.gateway.api;
 
 import com.muxai.gateway.api.dto.ErrorResponse;
 import com.muxai.gateway.auth.ModelAccessDeniedException;
+import com.muxai.gateway.cost.BudgetExceededException;
 import com.muxai.gateway.provider.ProviderException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,6 +25,14 @@ public class GlobalExceptionHandler {
         log.warn("Model access denied app_id={} model={}", ex.appId(), ex.requestedModel());
         return ResponseEntity.status(HttpStatus.FORBIDDEN)
                 .body(ErrorResponse.of(ex.getMessage(), "permission_error", "MODEL_NOT_ALLOWED"));
+    }
+
+    @ExceptionHandler(BudgetExceededException.class)
+    public ResponseEntity<ErrorResponse> handleBudgetExceeded(BudgetExceededException ex) {
+        log.warn("Budget exceeded app_id={} spent_usd={} cap_usd={}",
+                ex.appId(), ex.spentUsd(), ex.capUsd());
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .body(ErrorResponse.of(ex.getMessage(), "budget_exceeded", "BUDGET_EXHAUSTED"));
     }
 
     @ExceptionHandler(ProviderException.class)
