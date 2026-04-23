@@ -84,7 +84,7 @@ public class ChatController {
             metrics.recordCacheHit(appId, ENDPOINT);
             log.info("request_id={} app_id={} endpoint={} model_requested={} cache=hit",
                     requestId, appId, ENDPOINT, requestedModel);
-            return ResponseEntity.ok(cached);
+            return ResponseEntity.ok(piiRedactor.redactResponse(cached));
         }
 
         long start = System.nanoTime();
@@ -96,8 +96,11 @@ public class ChatController {
             long latencyMs = (System.nanoTime() - start) / 1_000_000L;
             metrics.recordSuccess(requestId, appId, ENDPOINT, requestedModel, result,
                     latencyMs, result.response().usage());
+            // Cache the un-scrubbed response — outbound redaction is a render-time
+            // concern and shouldn't pollute the cache for callers who later opt out.
             cache.store(internal, result.response());
-            return ResponseEntity.ok(result.response());
+            ChatResponse out = piiRedactor.redactResponse(result.response());
+            return ResponseEntity.ok(out);
         } catch (ProviderException pe) {
             long latencyMs = (System.nanoTime() - start) / 1_000_000L;
             metrics.recordFailure(requestId, appId, ENDPOINT, requestedModel, latencyMs, pe);

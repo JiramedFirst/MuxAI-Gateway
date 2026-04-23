@@ -12,6 +12,7 @@ import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.Timer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 import java.util.concurrent.TimeUnit;
@@ -22,21 +23,37 @@ public class RequestMetrics {
     private static final Logger log = LoggerFactory.getLogger(RequestMetrics.class);
 
     private final MeterRegistry registry;
-    // Both nullable: tests construct RequestMetrics directly without these
-    // collaborators. When null, cost recording / budget tracking are no-ops.
-    private final PricingTable pricingTable;
-    private final BudgetGuard budgetGuard;
+    // ObjectProvider (lazy) resolution for PricingTable + BudgetGuard breaks the
+    // otherwise-circular dependency ConfigRuntime -> RequestMetrics -> PricingTable
+    // -> ConfigRuntime. Both are resolved on every cost-recording call; null-safe
+    // when absent (tests or bootstrap ordering).
+    private final ObjectProvider<PricingTable> pricingTableProvider;
+    private final ObjectProvider<BudgetGuard> budgetGuardProvider;
 
     public RequestMetrics(MeterRegistry registry) {
-        this(registry, null, null);
+        this(registry, emptyProvider(), emptyProvider());
     }
 
     @org.springframework.beans.factory.annotation.Autowired
-    public RequestMetrics(MeterRegistry registry, PricingTable pricingTable, BudgetGuard budgetGuard) {
+    public RequestMetrics(MeterRegistry registry,
+                          ObjectProvider<PricingTable> pricingTableProvider,
+                          ObjectProvider<BudgetGuard> budgetGuardProvider) {
         this.registry = registry;
-        this.pricingTable = pricingTable;
-        this.budgetGuard = budgetGuard;
+        this.pricingTableProvider = pricingTableProvider;
+        this.budgetGuardProvider = budgetGuardProvider;
     }
+
+    @SuppressWarnings("unchecked")
+    private static <T> ObjectProvider<T> emptyProvider() {
+        return (ObjectProvider<T>) EMPTY_PROVIDER;
+    }
+
+    private static final ObjectProvider<Object> EMPTY_PROVIDER = new ObjectProvider<>() {
+        @Override public Object getObject(Object... args) { return null; }
+        @Override public Object getObject() { return null; }
+        @Override public Object getIfAvailable() { return null; }
+        @Override public Object getIfUnique() { return null; }
+    };
 
     public void recordRequest(String appId, String route, String outcome) {
         Counter.builder("muxai.request.total")
@@ -78,8 +95,9 @@ public class RequestMetrics {
      */
     public void recordCost(String appId, String providerId, String model,
                            long promptTokens, long completionTokens) {
-        if (pricingTable == null) return;
-        double usd = pricingTable.usdFor(providerId, model, promptTokens, completionTokens);
+        PricingTable pricing = pricingTableProvider.getIfAvailable();
+        if (pricing == null) return;
+        double usd = pricing.usdFor(providerId, model, promptTokens, completionTokens);
         if (usd <= 0.0) return;
         Counter.builder("muxai.cost.usd.total")
                 .description("Cumulative provider spend in USD, attributed by app/provider/model")
@@ -92,8 +110,9 @@ public class RequestMetrics {
                 .increment(usd);
         // Always update the budget tally — even when budget enforcement is off,
         // operators can dry-run caps before flipping the switch.
-        if (budgetGuard != null) {
-            budgetGuard.record(appId, usd);
+        BudgetGuard budget = budgetGuardProvider.getIfAvailable();
+        if (budget != null) {
+            budget.record(appId, usd);
         }
     }
 

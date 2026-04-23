@@ -44,6 +44,7 @@ public class BudgetGuard {
     // Per-app cap snapshot, rebuilt from ConfigRuntime on every reload.
     private volatile Map<String, Double> capByAppId;
 
+    @org.springframework.beans.factory.annotation.Autowired
     public BudgetGuard(BudgetProperties props, ConfigRuntime runtime) {
         this(props, runtime, Clock.systemUTC());
     }

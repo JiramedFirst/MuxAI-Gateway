@@ -14,7 +14,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PiiRedactorTest {
 
     private static PiiRedactor withAll(boolean on) {
-        PiiProperties props = new PiiProperties(on, on, on, on, on, on);
+        PiiProperties props = new PiiProperties(on, on, on, on, on, on, null);
         return new PiiRedactor(props, new RequestMetrics(new SimpleMeterRegistry()));
     }
 
@@ -82,7 +82,7 @@ class PiiRedactorTest {
 
     @Test
     void selectiveToggleOnlyRedactsChosenKinds() {
-        PiiProperties props = new PiiProperties(true, false, false, true, false, false);
+        PiiProperties props = new PiiProperties(true, false, false, true, false, false, null);
         PiiRedactor r = new PiiRedactor(props, new RequestMetrics(new SimpleMeterRegistry()));
 
         String out = (String) r.redact(req("mail a@b.com card 4111 1111 1111 1111"))

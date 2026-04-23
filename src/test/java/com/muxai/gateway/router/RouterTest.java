@@ -44,7 +44,7 @@ class RouterTest {
         RouteProperties route = new RouteProperties(
                 new RouteProperties.Match(null, null),
                 new RouteProperties.Step("primary", null),
-                fallbackSteps);
+                fallbackSteps, null);
         GatewayProperties props = new GatewayProperties(List.of(), List.of(route), List.of());
         RouteMatcher matcher = new RouteMatcher(new ConfigRuntime(props, metrics));
         ProviderRegistry.Lookup lookup = new ProviderRegistry.Lookup(Map.of(
@@ -159,7 +159,7 @@ class RouterTest {
         RouteProperties route = new RouteProperties(
                 new RouteProperties.Match(null, "smart"),
                 new RouteProperties.Step("primary", "gpt-4o"),
-                List.of());
+                List.of(), null);
         GatewayProperties props = new GatewayProperties(List.of(), List.of(route), List.of());
         Router router = new Router(
                 new RouteMatcher(new ConfigRuntime(props, metrics)),

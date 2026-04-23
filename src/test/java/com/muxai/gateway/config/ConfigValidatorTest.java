@@ -26,7 +26,7 @@ class ConfigValidatorTest {
 
     private static RouteProperties route(String model, String providerId) {
         return new RouteProperties(new Match(null, model),
-                new Step(providerId, null), List.of());
+                new Step(providerId, null), List.of(), null);
     }
 
     private static ApiKey key(String k, String appId) {
@@ -99,7 +99,7 @@ class ConfigValidatorTest {
                 List.of(openai("p1")),
                 List.of(
                         // catch-all first
-                        new RouteProperties(null, new Step("p1", null), List.of()),
+                        new RouteProperties(null, new Step("p1", null), List.of(), null),
                         // this one can never match — would be dead code
                         route("gpt-*", "p1")),
                 List.of(key("mgw_k1", "app1")));
