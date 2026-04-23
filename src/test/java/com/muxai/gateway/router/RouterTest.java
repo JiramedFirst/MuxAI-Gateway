@@ -46,7 +46,7 @@ class RouterTest {
                 new RouteProperties.Step("primary", null),
                 fallbackSteps);
         GatewayProperties props = new GatewayProperties(List.of(), List.of(route), List.of());
-        RouteMatcher matcher = new RouteMatcher(new ConfigRuntime(props));
+        RouteMatcher matcher = new RouteMatcher(new ConfigRuntime(props, metrics));
         ProviderRegistry.Lookup lookup = new ProviderRegistry.Lookup(Map.of(
                 "primary", primary,
                 "fallback", fallback));
@@ -141,7 +141,7 @@ class RouterTest {
     @Test
     void noRouteYieldsInvalidRequest() {
         GatewayProperties props = new GatewayProperties(List.of(), List.of(), List.of());
-        RouteMatcher matcher = new RouteMatcher(new ConfigRuntime(props));
+        RouteMatcher matcher = new RouteMatcher(new ConfigRuntime(props, metrics));
         ProviderRegistry.Lookup lookup = new ProviderRegistry.Lookup(Map.of());
         Router router = new Router(matcher, lookup, metrics);
 
@@ -162,7 +162,7 @@ class RouterTest {
                 List.of());
         GatewayProperties props = new GatewayProperties(List.of(), List.of(route), List.of());
         Router router = new Router(
-                new RouteMatcher(new ConfigRuntime(props)),
+                new RouteMatcher(new ConfigRuntime(props, metrics)),
                 new ProviderRegistry.Lookup(Map.of("primary", primary)),
                 metrics);
 

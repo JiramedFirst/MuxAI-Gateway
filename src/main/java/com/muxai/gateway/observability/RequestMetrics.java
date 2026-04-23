@@ -111,6 +111,19 @@ public class RequestMetrics {
     }
 
     /**
+     * Record a config hot-reload tick outcome. Tag values are stable strings
+     * ({@code success}, {@code invalid}, {@code parse_failed}, {@code io_error},
+     * {@code listener_error}) so downstream alerts can filter on them.
+     */
+    public void recordConfigReload(String outcome) {
+        Counter.builder("muxai.config.reload.total")
+                .description("Count of config hot-reload ticks by outcome")
+                .tags(Tags.of(Tag.of("outcome", safe(outcome))))
+                .register(registry)
+                .increment();
+    }
+
+    /**
      * Record a successful request: increments the request counter, emits token counters,
      * and writes the structured success log line. Token extraction handles null usage.
      */
