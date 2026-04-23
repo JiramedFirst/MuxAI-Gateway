@@ -224,5 +224,5 @@ here rather than in each consumer.
 
 ## Git workflow
 
-Active development branch for this session: `claude/add-claude-documentation-qldcq`.
+Active development branch for this session: `claude/update-claud-md-ZH3NZ`.
 Push there; PRs merge into `main`. Always open PRs as draft.
