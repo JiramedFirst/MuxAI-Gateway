@@ -1,5 +1,6 @@
 package com.muxai.gateway;
 
+import com.muxai.gateway.admin.AdminProperties;
 import com.muxai.gateway.cache.CacheProperties;
 import com.muxai.gateway.config.GatewayProperties;
 import com.muxai.gateway.hotreload.HotReloadProperties;
@@ -15,7 +16,8 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
         PiiProperties.class,
         CacheProperties.class,
         HotReloadProperties.class,
-        RateLimitProperties.class
+        RateLimitProperties.class,
+        AdminProperties.class
 })
 public class MuxaiApplication {
     public static void main(String[] args) {
