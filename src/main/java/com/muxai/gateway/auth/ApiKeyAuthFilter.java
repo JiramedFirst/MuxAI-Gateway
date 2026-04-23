@@ -1,6 +1,7 @@
 package com.muxai.gateway.auth;
 
 import com.muxai.gateway.config.GatewayProperties;
+import com.muxai.gateway.config.GatewayProperties.ApiKey;
 import com.muxai.gateway.hotreload.ConfigRuntime;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -19,14 +20,16 @@ import org.springframework.util.AntPathMatcher;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.HashMap;
+import java.util.Locale;
 import java.util.Map;
 
 public class ApiKeyAuthFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(ApiKeyAuthFilter.class);
 
-    private volatile Map<String, String> keyToAppId;
+    private volatile Map<String, ApiKey> keyToApiKey;
     private final AuthenticationEntryPoint entryPoint;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
 
@@ -37,14 +40,14 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
     }
 
     private void rebuild(GatewayProperties props) {
-        Map<String, String> map = new HashMap<>();
-        for (GatewayProperties.ApiKey k : props.apiKeysOrEmpty()) {
+        Map<String, ApiKey> map = new HashMap<>();
+        for (ApiKey k : props.apiKeysOrEmpty()) {
             if (k.key() != null && k.appId() != null) {
-                map.put(k.key(), k.appId());
+                map.put(k.key(), k);
             }
         }
-        this.keyToAppId = Map.copyOf(map);
-        log.info("ApiKeyAuthFilter loaded {} API key(s)", keyToAppId.size());
+        this.keyToApiKey = Map.copyOf(map);
+        log.info("ApiKeyAuthFilter loaded {} API key(s)", keyToApiKey.size());
     }
 
     @Override
@@ -66,15 +69,20 @@ public class ApiKeyAuthFilter extends OncePerRequestFilter {
             reject(request, response, "Missing or malformed Authorization header");
             return;
         }
-        String appId = keyToAppId.get(token);
-        if (appId == null) {
+        ApiKey apiKey = keyToApiKey.get(token);
+        if (apiKey == null) {
             reject(request, response, "Invalid API key");
             return;
         }
+        if (apiKey.isExpired(Instant.now())) {
+            reject(request, response, "API key expired");
+            return;
+        }
 
-        AppPrincipal principal = new AppPrincipal(appId);
+        AppPrincipal principal = new AppPrincipal(apiKey.appId(), apiKey);
+        String authority = "ROLE_" + apiKey.roleOrDefault().toUpperCase(Locale.ROOT);
         UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
-                principal, token, AuthorityUtils.createAuthorityList("ROLE_APP"));
+                principal, token, AuthorityUtils.createAuthorityList(authority));
         SecurityContextHolder.getContext().setAuthentication(auth);
 
         try {

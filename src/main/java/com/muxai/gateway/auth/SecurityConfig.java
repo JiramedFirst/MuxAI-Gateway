@@ -81,6 +81,10 @@ public class SecurityConfig {
                 .exceptionHandling(e -> e.authenticationEntryPoint(entryPoint))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PublicPaths.PATTERNS.toArray(String[]::new)).permitAll()
+                        // Admin REST surface is admin-role only. Static admin assets stay
+                        // public above (browsers can't send Bearer on <script src>); the UI
+                        // sends Bearer when calling /admin/api/* via fetch.
+                        .requestMatchers("/admin/api/**").hasAuthority("ROLE_ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(apiKeyAuthFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterAfter(rateLimitFilter, ApiKeyAuthFilter.class);

@@ -1,5 +1,6 @@
 package com.muxai.gateway.admin;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.muxai.gateway.config.GatewayProperties;
 import com.muxai.gateway.config.ProviderProperties;
 import com.muxai.gateway.config.RouteProperties;
@@ -8,6 +9,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -45,7 +47,14 @@ public class AdminController {
 
         List<ApiKeyView> keys = new ArrayList<>();
         for (GatewayProperties.ApiKey k : props.apiKeysOrEmpty()) {
-            keys.add(new ApiKeyView(mask(k.key()), k.appId(), k.rateLimitPerMin()));
+            keys.add(new ApiKeyView(
+                    mask(k.key()),
+                    k.appId(),
+                    k.rateLimitPerMin(),
+                    k.roleOrDefault(),
+                    k.allowedModelsOrEmpty(),
+                    k.expiresAt(),
+                    k.dailyBudgetUsd()));
         }
 
         return ResponseEntity.ok(new Overview(providers, routes, keys));
@@ -79,5 +88,12 @@ public class AdminController {
 
     public record StepView(String provider, String model) {}
 
-    public record ApiKeyView(String keyMasked, String appId, Integer rateLimitPerMin) {}
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ApiKeyView(String keyMasked,
+                             String appId,
+                             Integer rateLimitPerMin,
+                             String role,
+                             List<String> allowedModels,
+                             Instant expiresAt,
+                             Double dailyBudgetUsd) {}
 }
