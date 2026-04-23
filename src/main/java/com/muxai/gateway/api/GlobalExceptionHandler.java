@@ -1,6 +1,7 @@
 package com.muxai.gateway.api;
 
 import com.muxai.gateway.api.dto.ErrorResponse;
+import com.muxai.gateway.auth.ModelAccessDeniedException;
 import com.muxai.gateway.provider.ProviderException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +18,13 @@ import java.util.stream.Collectors;
 public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    @ExceptionHandler(ModelAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleModelAccessDenied(ModelAccessDeniedException ex) {
+        log.warn("Model access denied app_id={} model={}", ex.appId(), ex.requestedModel());
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(ErrorResponse.of(ex.getMessage(), "permission_error", "MODEL_NOT_ALLOWED"));
+    }
 
     @ExceptionHandler(ProviderException.class)
     public ResponseEntity<ErrorResponse> handleProvider(ProviderException ex) {

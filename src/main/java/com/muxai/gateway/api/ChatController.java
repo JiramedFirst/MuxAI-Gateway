@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.muxai.gateway.api.dto.ErrorResponse;
 import com.muxai.gateway.api.dto.OpenAiChatRequest;
 import com.muxai.gateway.auth.AppPrincipal;
+import com.muxai.gateway.auth.ModelScopeGuard;
 import com.muxai.gateway.cache.SemanticCache;
 import com.muxai.gateway.observability.RequestContext;
 import com.muxai.gateway.observability.RequestMetrics;
@@ -40,23 +41,27 @@ public class ChatController {
     private final ObjectMapper mapper;
     private final PiiRedactor piiRedactor;
     private final SemanticCache cache;
+    private final ModelScopeGuard modelScopeGuard;
 
     public ChatController(Router router,
                           RequestMetrics metrics,
                           ObjectMapper mapper,
                           PiiRedactor piiRedactor,
-                          SemanticCache cache) {
+                          SemanticCache cache,
+                          ModelScopeGuard modelScopeGuard) {
         this.router = router;
         this.metrics = metrics;
         this.mapper = mapper;
         this.piiRedactor = piiRedactor;
         this.cache = cache;
+        this.modelScopeGuard = modelScopeGuard;
     }
 
     @PostMapping("/chat/completions")
     public Object chat(@Valid @RequestBody OpenAiChatRequest body,
                        @AuthenticationPrincipal AppPrincipal principal,
                        HttpServletRequest http) {
+        modelScopeGuard.check(principal, body.model());
         String requestId = RequestContext.requestId(http);
         String appId = principal != null ? principal.appId() : "unknown";
         ChatRequest internal = piiRedactor.redact(body.toInternal());

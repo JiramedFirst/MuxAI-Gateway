@@ -55,6 +55,14 @@ springdoc:
 # upgrade keeps Phase 1 behaviour — flip each switch as you opt into the
 # corresponding feature.
 muxai:
+  admin:
+    # When a key is rotated via POST /admin/api/keys/rotate, the old key stays
+    # valid for this many seconds so clients can roll over before it 401s.
+    rotation-grace-seconds: 600
+    # Where rotation writes its state. Merged into providers.yml's api-keys on
+    # every reload so a pending rotation survives mtime changes elsewhere.
+    runtime-keys-path: ./config/runtime-keys.yml
+
   pii:
     enabled: false
     email: true
