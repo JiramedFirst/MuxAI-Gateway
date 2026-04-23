@@ -35,7 +35,8 @@ class AnthropicProviderTest {
                 wm.baseUrl(),
                 "ant-test-key",
                 60_000L,
-                List.of("claude-sonnet-4-6"));
+                List.of("claude-sonnet-4-6"),
+                null);
         AnthropicProviderFactory factory = new AnthropicProviderFactory(WebClient.builder(), new com.fasterxml.jackson.databind.ObjectMapper());
         return factory.create(props);
     }

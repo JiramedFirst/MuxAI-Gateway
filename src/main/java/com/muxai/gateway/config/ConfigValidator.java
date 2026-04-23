@@ -27,6 +27,8 @@ public class ConfigValidator {
     private static final Logger log = LoggerFactory.getLogger(ConfigValidator.class);
 
     private static final Set<String> SUPPORTED_TYPES = Set.of("openai", "anthropic");
+    private static final Set<String> SUPPORTED_ROLES = Set.of(
+            GatewayProperties.ROLE_ADMIN, GatewayProperties.ROLE_APP);
 
     private final GatewayProperties props;
 
@@ -98,8 +100,26 @@ public class ConfigValidator {
                 log.warn("Provider '{}' has no api-key — upstream auth will likely fail if this isn't a local endpoint",
                         p.id());
             }
+            validatePricing(prefix + " (id=" + p.id() + ")", p.pricingOrEmpty(), errors);
         }
         return ids;
+    }
+
+    private void validatePricing(String prefix,
+                                 java.util.Map<String, ProviderProperties.ModelPricing> pricing,
+                                 List<String> errors) {
+        for (var entry : pricing.entrySet()) {
+            String model = entry.getKey();
+            ProviderProperties.ModelPricing mp = entry.getValue();
+            if (mp == null) {
+                errors.add(prefix + ".pricing[" + model + "]: value is null");
+                continue;
+            }
+            if (mp.inputPer1MUsd() < 0 || mp.outputPer1MUsd() < 0) {
+                errors.add(prefix + ".pricing[" + model + "]: "
+                        + "input-per-1m-usd and output-per-1m-usd must be >= 0");
+            }
+        }
     }
 
     private void validateRoutes(Set<String> providerIds, List<String> errors) {
@@ -166,6 +186,17 @@ public class ConfigValidator {
             if (k.rateLimitPerMin() != null && k.rateLimitPerMin() < 0) {
                 errors.add(prefix + ": rate-limit-per-min must be >= 0 (0 or absent disables limiting)");
             }
+            if (k.role() != null
+                    && !SUPPORTED_ROLES.contains(k.role().toLowerCase(Locale.ROOT))) {
+                errors.add(prefix + ": unknown role '" + k.role()
+                        + "' (supported: " + SUPPORTED_ROLES + ")");
+            }
+            if (k.dailyBudgetUsd() != null && k.dailyBudgetUsd() < 0) {
+                errors.add(prefix + ": daily-budget-usd must be >= 0");
+            }
+            // expiresAt in the past is not an error — operators legitimately leave
+            // expired keys in the file until cleanup. The auth filter rejects them
+            // at request time; the config just ignores them.
         }
     }
 

@@ -35,9 +35,9 @@ class ConfigRuntimeTest {
         assertThat(runtime.current()).isSameAs(initial);
 
         GatewayProperties next = new GatewayProperties(
-                List.of(new ProviderProperties("p1", "openai", "https://x", "k", null, List.of())),
+                List.of(new ProviderProperties("p1", "openai", "https://x", "k", null, List.of(), null)),
                 List.of(),
-                List.of(new GatewayProperties.ApiKey("k1", "app", 10)));
+                List.of(new GatewayProperties.ApiKey("k1", "app", 10, null, null, null, null, null)));
         runtime.replace(next);
 
         assertThat(runtime.current()).isSameAs(next);

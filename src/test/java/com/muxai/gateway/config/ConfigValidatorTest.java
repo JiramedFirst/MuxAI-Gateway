@@ -21,7 +21,7 @@ class ConfigValidatorTest {
 
     private static ProviderProperties openai(String id) {
         return new ProviderProperties(id, "openai", "https://api.openai.com/v1",
-                "sk-test", null, List.of("gpt-4o"));
+                "sk-test", null, List.of("gpt-4o"), null);
     }
 
     private static RouteProperties route(String model, String providerId) {
@@ -30,7 +30,7 @@ class ConfigValidatorTest {
     }
 
     private static ApiKey key(String k, String appId) {
-        return new ApiKey(k, appId, 1000);
+        return new ApiKey(k, appId, 1000, null, null, null, null, null);
     }
 
     @Test
@@ -65,7 +65,7 @@ class ConfigValidatorTest {
     void rejectsUnknownProviderType() {
         GatewayProperties p = props(
                 List.of(new ProviderProperties("p1", "bogus", "https://x",
-                        "sk", null, List.of())),
+                        "sk", null, List.of(), null)),
                 List.of(route(null, "p1")),
                 List.of(key("mgw_k1", "app1")));
         assertThatThrownBy(() -> new ConfigValidator(p).validate())
@@ -76,7 +76,7 @@ class ConfigValidatorTest {
     void rejectsMalformedBaseUrl() {
         GatewayProperties p = props(
                 List.of(new ProviderProperties("p1", "openai", "not a url",
-                        "sk", null, List.of())),
+                        "sk", null, List.of(), null)),
                 List.of(route(null, "p1")),
                 List.of(key("mgw_k1", "app1")));
         assertThatThrownBy(() -> new ConfigValidator(p).validate())
@@ -122,7 +122,7 @@ class ConfigValidatorTest {
         GatewayProperties p = props(
                 List.of(openai("p1")),
                 List.of(route(null, "p1")),
-                List.of(new ApiKey("mgw_k1", null, 10)));
+                List.of(new ApiKey("mgw_k1", null, 10, null, null, null, null, null)));
         assertThatThrownBy(() -> new ConfigValidator(p).validate())
                 .hasMessageContaining("app-id is required");
     }
@@ -132,15 +132,52 @@ class ConfigValidatorTest {
         GatewayProperties p = props(
                 List.of(openai("p1")),
                 List.of(route(null, "p1")),
-                List.of(new ApiKey("mgw_k1", "app1", -5)));
+                List.of(new ApiKey("mgw_k1", "app1", -5, null, null, null, null, null)));
         assertThatThrownBy(() -> new ConfigValidator(p).validate())
                 .hasMessageContaining("rate-limit-per-min");
     }
 
     @Test
+    void rejectsUnknownRole() {
+        GatewayProperties p = props(
+                List.of(openai("p1")),
+                List.of(route(null, "p1")),
+                List.of(new ApiKey("mgw_k1", "app1", 10,
+                        null, null, "superuser", null, null)));
+        assertThatThrownBy(() -> new ConfigValidator(p).validate())
+                .hasMessageContaining("unknown role 'superuser'");
+    }
+
+    @Test
+    void rejectsNegativeDailyBudget() {
+        GatewayProperties p = props(
+                List.of(openai("p1")),
+                List.of(route(null, "p1")),
+                List.of(new ApiKey("mgw_k1", "app1", 10,
+                        null, null, null, null, -1.0)));
+        assertThatThrownBy(() -> new ConfigValidator(p).validate())
+                .hasMessageContaining("daily-budget-usd");
+    }
+
+    @Test
+    void rejectsNegativePricing() {
+        ProviderProperties badPricing = new ProviderProperties(
+                "p1", "openai", "https://api.openai.com/v1", "sk-test", null,
+                List.of("gpt-4o"),
+                java.util.Map.of("gpt-4o",
+                        new ProviderProperties.ModelPricing(-1.0, 10.0)));
+        GatewayProperties p = props(
+                List.of(badPricing),
+                List.of(route(null, "p1")),
+                List.of(key("mgw_k1", "app1")));
+        assertThatThrownBy(() -> new ConfigValidator(p).validate())
+                .hasMessageContaining("pricing[gpt-4o]");
+    }
+
+    @Test
     void errorMessageAggregatesMultipleProblems() {
         GatewayProperties p = props(
-                List.of(new ProviderProperties("p1", null, null, null, null, List.of())),
+                List.of(new ProviderProperties("p1", null, null, null, null, List.of(), null)),
                 List.of(route(null, "p1")),
                 List.of());
         assertThatThrownBy(() -> new ConfigValidator(p).validate())
