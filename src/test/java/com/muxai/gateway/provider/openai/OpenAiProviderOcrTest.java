@@ -32,7 +32,8 @@ class OpenAiProviderOcrTest {
                 wm.baseUrl(),
                 "sk-test-key",
                 60_000L,
-                List.of("typhoon-ocr"));
+                List.of("typhoon-ocr"),
+                null);
         return new OpenAiProviderFactory(WebClient.builder(), new com.fasterxml.jackson.databind.ObjectMapper()).create(props);
     }
 

@@ -20,7 +20,7 @@ class AnthropicTranslationTest {
     private AnthropicProvider provider() {
         ProviderProperties props = new ProviderProperties(
                 "anthropic-test", "anthropic", "https://example/v1",
-                "k", 60_000L, List.of("claude-sonnet-4-6"));
+                "k", 60_000L, List.of("claude-sonnet-4-6"), null);
         return new AnthropicProviderFactory(WebClient.builder(), new ObjectMapper()).create(props);
     }
 
