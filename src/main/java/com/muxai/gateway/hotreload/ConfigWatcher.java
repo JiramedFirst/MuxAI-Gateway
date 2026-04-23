@@ -1,5 +1,6 @@
 package com.muxai.gateway.hotreload;
 
+import com.muxai.gateway.admin.ApiKeyOverlay;
 import com.muxai.gateway.config.ConfigValidator;
 import com.muxai.gateway.config.GatewayProperties;
 import com.muxai.gateway.observability.RequestMetrics;
@@ -7,6 +8,8 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.ConfigurationPropertySources;
 import org.springframework.boot.env.YamlPropertySourceLoader;
@@ -43,18 +46,42 @@ public class ConfigWatcher {
     private final HotReloadProperties props;
     private final ConfigRuntime runtime;
     private final RequestMetrics metrics;
+    // ObjectProvider to keep test constructors (which build ConfigWatcher
+    // directly) from needing an overlay argument. getIfAvailable() returns
+    // null in tests that don't wire the overlay; merge then becomes a no-op.
+    private final ObjectProvider<ApiKeyOverlay> overlayProvider;
 
     private ScheduledExecutorService scheduler;
     private volatile long lastModifiedMillis;
 
-    public ConfigWatcher(HotReloadProperties props, ConfigRuntime runtime, RequestMetrics metrics) {
+    @Autowired
+    public ConfigWatcher(HotReloadProperties props,
+                         ConfigRuntime runtime,
+                         RequestMetrics metrics,
+                         ObjectProvider<ApiKeyOverlay> overlayProvider) {
         this.props = props;
         this.runtime = runtime;
         this.metrics = metrics;
+        this.overlayProvider = overlayProvider;
+    }
+
+    // Backwards-compat ctor for tests that construct ConfigWatcher directly
+    // without an overlay bean. Keeps RateLimit / ConfigWatcher tests simple.
+    public ConfigWatcher(HotReloadProperties props, ConfigRuntime runtime, RequestMetrics metrics) {
+        this(props, runtime, metrics, new ObjectProvider<>() {
+            @Override public ApiKeyOverlay getObject(Object... args) { return null; }
+            @Override public ApiKeyOverlay getObject() { return null; }
+            @Override public ApiKeyOverlay getIfAvailable() { return null; }
+            @Override public ApiKeyOverlay getIfUnique() { return null; }
+        });
     }
 
     @PostConstruct
     public void start() {
+        // Apply the runtime-keys overlay once at boot, regardless of whether
+        // hot-reload polling is enabled. Rotation state must survive restart.
+        applyOverlayAtBoot();
+
         if (!props.enabledOrDefault()) return;
         Path path = Paths.get(props.pathOrDefault());
         if (!Files.exists(path)) {
@@ -75,6 +102,30 @@ public class ConfigWatcher {
         long interval = props.intervalMsOrDefault();
         scheduler.scheduleAtFixedRate(this::check, interval, interval, TimeUnit.MILLISECONDS);
         log.info("config hot-reload enabled path={} interval_ms={}", path, interval);
+    }
+
+    private void applyOverlayAtBoot() {
+        ApiKeyOverlay overlay = overlayProvider.getIfAvailable();
+        if (overlay == null) return;
+        GatewayProperties current = runtime.current();
+        GatewayProperties merged = overlay.merge(current);
+        if (merged != current) {
+            runtime.replace(merged);
+            log.info("runtime-keys overlay applied at boot extra_keys={}",
+                    merged.apiKeysOrEmpty().size() - current.apiKeysOrEmpty().size());
+        }
+    }
+
+    /**
+     * Re-read the overlay and merge it into the current runtime. Invoked by
+     * AdminController after writing a rotation to runtime-keys.yml so the
+     * change takes effect without waiting for the next mtime tick.
+     */
+    public void reloadOverlay() {
+        ApiKeyOverlay overlay = overlayProvider.getIfAvailable();
+        if (overlay == null) return;
+        GatewayProperties merged = overlay.merge(runtime.current());
+        runtime.replace(merged);
     }
 
     @PreDestroy
@@ -120,7 +171,12 @@ public class ConfigWatcher {
             return;
         }
 
-        runtime.replace(parsed);
+        // Merge the runtime-keys overlay on every providers.yml reload so a
+        // pending rotation survives edits elsewhere in the config file.
+        ApiKeyOverlay overlay = overlayProvider.getIfAvailable();
+        GatewayProperties merged = overlay != null ? overlay.merge(parsed) : parsed;
+
+        runtime.replace(merged);
         lastModifiedMillis = mt;
         metrics.recordConfigReload("success");
     }

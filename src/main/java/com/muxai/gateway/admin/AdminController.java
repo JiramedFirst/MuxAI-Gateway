@@ -4,11 +4,16 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.muxai.gateway.config.GatewayProperties;
 import com.muxai.gateway.config.ProviderProperties;
 import com.muxai.gateway.config.RouteProperties;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,10 +23,20 @@ import java.util.List;
 public class AdminController {
 
     private final GatewayProperties props;
+    private final KeyRotationService rotationService;
 
-    public AdminController(GatewayProperties props) {
+    public AdminController(GatewayProperties props, KeyRotationService rotationService) {
         this.props = props;
+        this.rotationService = rotationService;
     }
+
+    @PostMapping("/keys/rotate")
+    public ResponseEntity<KeyRotationService.RotationResult> rotate(
+            @Valid @RequestBody RotationRequest body) throws IOException {
+        return ResponseEntity.ok(rotationService.rotate(body.key()));
+    }
+
+    public record RotationRequest(@NotBlank String key) {}
 
     @GetMapping("/overview")
     public ResponseEntity<Overview> overview() {
