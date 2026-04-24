@@ -133,6 +133,14 @@ do bidirectional translation, including:
 - Streaming: Anthropic `message_start` / `content_block_*` / `message_delta`
   events are re-emitted as OpenAI `chat.completion.chunk` shapes. `tool_use`
   blocks accumulate their `input_json_delta` partials indexed by block number.
+- Per-content-block `cache_control`: the inbound part's `cache_control` key
+  (e.g. `{"type":"ephemeral"}`) is copied verbatim onto the translated
+  Anthropic `text`/`image` block so prompt caching works across both.
+  `AnthropicProviderFactory` attaches `anthropic-beta: prompt-caching-2024-07-31`
+  as a default header. **System-level caching is not yet supported** — the
+  gateway still collapses multiple `system` messages into a single `String`
+  field, which strips any `cache_control`. Restructuring `system` into a
+  block array is a future plan.
 
 `ChatMessage.content` is typed as `Object` so it round-trips both the plain
 string form and the multi-part list form without re-modelling. Use

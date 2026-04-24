@@ -22,7 +22,8 @@ public class AnthropicProviderFactory {
         WebClient.Builder local = builder.clone()
                 .baseUrl(props.baseUrl())
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)
-                .defaultHeader("anthropic-version", "2023-06-01");
+                .defaultHeader("anthropic-version", "2023-06-01")
+                .defaultHeader("anthropic-beta", "prompt-caching-2024-07-31");
         if (props.apiKey() != null && !props.apiKey().isBlank()) {
             local = local.defaultHeader("x-api-key", props.apiKey());
         }

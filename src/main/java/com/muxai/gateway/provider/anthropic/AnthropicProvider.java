@@ -199,10 +199,12 @@ public class AnthropicProvider implements LlmProvider {
         String type;
         Object textVal = null;
         Object imageUrl = null;
+        Object cacheControl = null;
         if (part instanceof Map<?, ?> map) {
             type = map.get("type") instanceof String t ? t : null;
             textVal = map.get("text");
             imageUrl = map.get("image_url");
+            cacheControl = map.get("cache_control");
         } else if (part instanceof ContentPart cp) {
             type = cp.type();
             textVal = cp.text();
@@ -212,12 +214,20 @@ public class AnthropicProvider implements LlmProvider {
         }
 
         if ("text".equals(type)) {
-            return Map.of("type", "text", "text", textVal == null ? "" : textVal.toString());
+            Map<String, Object> block = new LinkedHashMap<>();
+            block.put("type", "text");
+            block.put("text", textVal == null ? "" : textVal.toString());
+            if (cacheControl != null) block.put("cache_control", cacheControl);
+            return block;
         }
         if ("image_url".equals(type)) {
             String url = extractImageUrl(imageUrl);
             if (url == null) return null;
-            return Map.of("type", "image", "source", imageSourceOf(url));
+            Map<String, Object> block = new LinkedHashMap<>();
+            block.put("type", "image");
+            block.put("source", imageSourceOf(url));
+            if (cacheControl != null) block.put("cache_control", cacheControl);
+            return block;
         }
         return null;
     }

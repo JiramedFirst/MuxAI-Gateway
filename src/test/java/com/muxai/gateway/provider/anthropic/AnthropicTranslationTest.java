@@ -10,6 +10,7 @@ import com.muxai.gateway.provider.model.ToolCall;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -124,5 +125,61 @@ class AnthropicTranslationTest {
         assertThat(translated.tools()).hasSize(1);
         assertThat(translated.tools().get(0).name()).isEqualTo("get_weather");
         assertThat(translated.toolChoice()).isNotNull();
+    }
+
+    @Test
+    void textContentPartPreservesCacheControl() {
+        Map<String, Object> part = new LinkedHashMap<>();
+        part.put("type", "text");
+        part.put("text", "Long system-like prompt");
+        part.put("cache_control", Map.of("type", "ephemeral"));
+
+        ChatRequest r = new ChatRequest(
+                "claude-sonnet-4-6",
+                List.of(new ChatMessage("user", List.of(part))),
+                null, null, 100, null, null, null, null);
+
+        AnthropicProvider.AnthropicMessagesRequest body = provider().toAnthropic(r, false);
+
+        List<?> blocks = (List<?>) body.messages().get(0).content();
+        Map<?, ?> textBlock = (Map<?, ?>) blocks.get(0);
+        assertThat(textBlock.get("type")).isEqualTo("text");
+        assertThat(textBlock.get("text")).isEqualTo("Long system-like prompt");
+        assertThat(textBlock.get("cache_control")).isEqualTo(Map.of("type", "ephemeral"));
+    }
+
+    @Test
+    void textContentPartWithoutCacheControlHasNoCacheControlKey() {
+        Map<String, Object> part = Map.of("type", "text", "text", "hi");
+
+        ChatRequest r = new ChatRequest(
+                "claude-sonnet-4-6",
+                List.of(new ChatMessage("user", List.of(part))),
+                null, null, 100, null, null, null, null);
+
+        AnthropicProvider.AnthropicMessagesRequest body = provider().toAnthropic(r, false);
+        List<?> blocks = (List<?>) body.messages().get(0).content();
+        Map<?, ?> textBlock = (Map<?, ?>) blocks.get(0);
+        assertThat(textBlock.get("cache_control")).isNull();
+        assertThat(textBlock.containsKey("cache_control")).isFalse();
+    }
+
+    @Test
+    void imageContentPartPreservesCacheControl() {
+        Map<String, Object> part = new LinkedHashMap<>();
+        part.put("type", "image_url");
+        part.put("image_url", Map.of("url", "https://example.com/cat.jpg"));
+        part.put("cache_control", Map.of("type", "ephemeral"));
+
+        ChatRequest r = new ChatRequest(
+                "claude-sonnet-4-6",
+                List.of(new ChatMessage("user", List.of(part))),
+                null, null, 100, null, null, null, null);
+
+        AnthropicProvider.AnthropicMessagesRequest body = provider().toAnthropic(r, false);
+        List<?> blocks = (List<?>) body.messages().get(0).content();
+        Map<?, ?> imageBlock = (Map<?, ?>) blocks.get(0);
+        assertThat(imageBlock.get("type")).isEqualTo("image");
+        assertThat(imageBlock.get("cache_control")).isEqualTo(Map.of("type", "ephemeral"));
     }
 }
