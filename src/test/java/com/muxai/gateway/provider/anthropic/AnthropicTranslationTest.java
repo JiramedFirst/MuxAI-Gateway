@@ -182,4 +182,67 @@ class AnthropicTranslationTest {
         assertThat(imageBlock.get("type")).isEqualTo("image");
         assertThat(imageBlock.get("cache_control")).isEqualTo(Map.of("type", "ephemeral"));
     }
+
+    @Test
+    void responseFormatOnAnthropicIsDroppedAndWarned() {
+        var appender = attachAppender();
+        ChatRequest r = new ChatRequest(
+                "claude-sonnet-4-6",
+                List.of(new ChatMessage("user", "hi")),
+                null, null, 100, null, null, null, null,
+                Map.of("type", "json_object"),
+                null, null);
+
+        AnthropicProvider.AnthropicMessagesRequest body = provider().toAnthropic(r, false);
+        assertThat(toJson(body)).doesNotContain("response_format");
+        assertThat(appender.list)
+                .extracting(e -> e.getFormattedMessage())
+                .anyMatch(m -> m.contains("response_format"));
+    }
+
+    @Test
+    void seedOnAnthropicIsDroppedAndWarned() {
+        var appender = attachAppender();
+        ChatRequest r = new ChatRequest(
+                "claude-sonnet-4-6",
+                List.of(new ChatMessage("user", "hi")),
+                null, null, 100, null, null, null, null,
+                null, 42, null);
+
+        AnthropicProvider.AnthropicMessagesRequest body = provider().toAnthropic(r, false);
+        assertThat(toJson(body)).doesNotContain("\"seed\"");
+        assertThat(appender.list)
+                .extracting(e -> e.getFormattedMessage())
+                .anyMatch(m -> m.contains("seed"));
+    }
+
+    @Test
+    void streamOptionsOnAnthropicIsDroppedAndWarned() {
+        var appender = attachAppender();
+        ChatRequest r = new ChatRequest(
+                "claude-sonnet-4-6",
+                List.of(new ChatMessage("user", "hi")),
+                null, null, 100, null, null, null, null,
+                null, null, Map.of("include_usage", true));
+
+        AnthropicProvider.AnthropicMessagesRequest body = provider().toAnthropic(r, false);
+        assertThat(toJson(body)).doesNotContain("stream_options");
+        assertThat(appender.list)
+                .extracting(e -> e.getFormattedMessage())
+                .anyMatch(m -> m.contains("stream_options"));
+    }
+
+    private static ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> attachAppender() {
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(AnthropicProvider.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        return appender;
+    }
+
+    private static String toJson(Object o) {
+        try { return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(o); }
+        catch (Exception e) { throw new RuntimeException(e); }
+    }
 }

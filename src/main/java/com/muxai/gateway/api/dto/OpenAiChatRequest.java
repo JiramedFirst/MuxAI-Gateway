@@ -22,10 +22,13 @@ public record OpenAiChatRequest(
         List<String> stop,
         Boolean stream,
         List<Tool> tools,
-        @JsonProperty("tool_choice") Object toolChoice
+        @JsonProperty("tool_choice") Object toolChoice,
+        @JsonProperty("response_format") Object responseFormat,
+        Integer seed,
+        @JsonProperty("stream_options") Object streamOptions
 ) {
     public ChatRequest toInternal() {
         return new ChatRequest(model, messages, temperature, topP, maxTokens, stop,
-                stream, tools, toolChoice);
+                stream, tools, toolChoice, responseFormat, seed, streamOptions);
     }
 }

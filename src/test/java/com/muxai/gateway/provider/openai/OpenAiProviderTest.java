@@ -12,9 +12,13 @@ import reactor.test.StepVerifier;
 
 import java.util.List;
 
+import java.util.Map;
+
 import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
 import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.matchingJsonPath;
 import static com.github.tomakehurst.wiremock.client.WireMock.post;
+import static com.github.tomakehurst.wiremock.client.WireMock.postRequestedFor;
 import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -155,5 +159,33 @@ class OpenAiProviderTest {
                     assertThat(pe.code()).isEqualTo(ProviderException.Code.AUTH_FAILED);
                 })
                 .verify();
+    }
+
+    @Test
+    void responseFormatSeedAndStreamOptionsPassThroughVerbatim() {
+        wm.stubFor(post(urlEqualTo("/chat/completions"))
+                .willReturn(aResponse().withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""
+                                {"id":"x","object":"chat.completion","created":1,"model":"gpt-4o",
+                                 "choices":[{"index":0,"message":{"role":"assistant","content":"ok"},
+                                 "finish_reason":"stop"}]}
+                                """)));
+
+        ChatRequest r = new ChatRequest(
+                "gpt-4o",
+                List.of(new ChatMessage("user", "hi")),
+                0.0, null, 50, null, null, null, null,
+                Map.of("type", "json_object"),
+                42,
+                Map.of("include_usage", true));
+
+        OpenAiProvider provider = newProvider(60_000L);
+        StepVerifier.create(provider.chat(r)).expectNextCount(1).verifyComplete();
+
+        wm.verify(postRequestedFor(urlEqualTo("/chat/completions"))
+                .withRequestBody(matchingJsonPath("$.response_format.type", equalTo("json_object")))
+                .withRequestBody(matchingJsonPath("$.seed", equalTo("42")))
+                .withRequestBody(matchingJsonPath("$.stream_options.include_usage", equalTo("true"))));
     }
 }

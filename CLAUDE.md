@@ -141,6 +141,12 @@ do bidirectional translation, including:
   gateway still collapses multiple `system` messages into a single `String`
   field, which strips any `cache_control`. Restructuring `system` into a
   block array is a future plan.
+- `response_format`, `seed`, `stream_options`: OpenAI-native fields added to
+  `OpenAiChatRequest` and the internal `ChatRequest`. OpenAI adapters
+  passthrough (Jackson serialises via `@JsonProperty` snake-case). Anthropic
+  drops each with a single `log.warn(...)` per field (`"<field> not
+  supported; dropping field (model=...)"`) and continues — no compatibility
+  shim.
 
 `ChatMessage.content` is typed as `Object` so it round-trips both the plain
 string form and the multi-part list form without re-modelling. Use

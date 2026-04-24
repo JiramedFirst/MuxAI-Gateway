@@ -112,6 +112,18 @@ public class AnthropicProvider implements LlmProvider {
     // ─── Translation: internal → Anthropic native ────────────────────────────
 
     AnthropicMessagesRequest toAnthropic(ChatRequest req, boolean stream) {
+        if (req.responseFormat() != null) {
+            log.warn("Anthropic provider '{}' does not support response_format; dropping field (model={})",
+                    props.id(), req.model());
+        }
+        if (req.seed() != null) {
+            log.warn("Anthropic provider '{}' does not support seed; dropping field (model={})",
+                    props.id(), req.model());
+        }
+        if (req.streamOptions() != null) {
+            log.warn("Anthropic provider '{}' does not support stream_options; dropping field (model={})",
+                    props.id(), req.model());
+        }
         String system = null;
         List<AnthropicMessage> conversation = new ArrayList<>();
         if (req.messages() != null) {
