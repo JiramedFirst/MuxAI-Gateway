@@ -47,9 +47,11 @@ in isolation under Surefire.
 
 ```
 HTTP → RequestIdFilter → ApiKeyAuthFilter → RateLimitFilter
-     → ChatController → PiiRedactor → SemanticCache.lookup
-     → Router.routeChat → RouteMatcher → LlmProvider (OpenAI|Anthropic)
-     → SemanticCache.store → response
+     → ChatController → ModelScopeGuard → BudgetGuard
+     → PiiRedactor.redact (inbound) → SemanticCache.lookup
+     → Router.routeChat → RouteMatcher → RouteSelector
+     → LlmProvider (OpenAI|Anthropic) → RequestMetrics.recordCost
+     → SemanticCache.store → PiiRedactor.redactResponse (outbound) → response
 ```
 
 1. `RequestIdFilter` (order `Integer.MIN_VALUE`) stamps every request with
@@ -65,17 +67,27 @@ HTTP → RequestIdFilter → ApiKeyAuthFilter → RateLimitFilter
 3. `RateLimitFilter` → `RateLimiter.tryAcquire(appId)` is a per-app token
    bucket (`capacity = rate-limit-per-min`, refill = limit/60s). Returns 429
    with `Retry-After`/`X-RateLimit-*` headers.
-4. Controller calls `ModelScopeGuard.check(principal, body.model())` before
-   any routing — if `ApiKey.allowedModels` is non-empty and the requested
-   model isn't in it, throws `ModelAccessDeniedException` → 403 (OpenAI error
-   shape `permission_error` / `MODEL_NOT_ALLOWED`). Then converts the
-   OpenAI-shape DTO to the internal `ChatRequest`, runs `PiiRedactor.redact`
-   (inbound-only text scrubbing), consults `SemanticCache`, then calls `Router`.
+4. Controller calls `ModelScopeGuard.check(principal, body.model())` then
+   `BudgetGuard.check(principal)` before any routing. `ModelScopeGuard` rejects
+   if `ApiKey.allowedModels` is non-empty and the requested model isn't in it
+   (`ModelAccessDeniedException` → 403, `permission_error` / `MODEL_NOT_ALLOWED`).
+   `BudgetGuard` rejects if the app has exceeded today's `ApiKey.dailyBudgetUsd`
+   (`BudgetExceededException` → 429, `budget_exceeded` / `BUDGET_EXHAUSTED`) —
+   gated on `muxai.budget.enabled`, with cost always recorded so operators can
+   dry-run caps. Then converts the OpenAI-shape DTO to the internal
+   `ChatRequest`, runs `PiiRedactor.redact` (inbound text scrubbing), consults
+   `SemanticCache`, then calls `Router`. On the return path,
+   `PiiRedactor.redactResponse` scrubs the `ChatResponse` if
+   `muxai.pii.outbound.enabled` is set (blocking only — streaming outbound PII
+   is still deferred).
 5. `Router` resolves a `RouteDecision` via `RouteMatcher` (first-match-wins
-   glob match on `appId` / `model`), builds a primary-then-fallback chain,
-   and walks it. Only `ProviderException` where `code.retryable == true`
+   glob match on `appId` / `model`), then asks `RouteSelector` to order the
+   primary-then-fallback chain. Default `PRIMARY_FIRST` preserves the declared
+   order; `CheapestFirstSelector` (opt-in via `routes[].strategy: cheapest-first`)
+   sorts by `PricingTable.usdFor` of each step's input rate and pushes unpriced
+   steps to the end. Only `ProviderException` where `code.retryable == true`
    triggers a fallback hop; streaming never falls back (would corrupt the
-   already-emitted bytes).
+   already-emitted bytes) and always runs the primary regardless of strategy.
 6. `LlmProvider` implementations (`OpenAiProvider`, `AnthropicProvider`)
    translate to/from the provider's native wire format and map HTTP/network
    errors to `ProviderException.Code`.
@@ -196,10 +208,15 @@ have been written.
 
 ### Feature toggles — all off by default
 
-`application.yml` ships with `muxai.pii.enabled`, `muxai.cache.enabled`,
-`muxai.hot-reload.enabled` all `false`. Every feature gates on its own
-property so a Phase 1 deployment upgrading to 1.0.0 has zero behavioural
-drift. Preserve this default-off stance when adding new features.
+`application.yml` ships with `muxai.pii.enabled`, `muxai.pii.outbound.enabled`,
+`muxai.cache.enabled`, `muxai.hot-reload.enabled`, and `muxai.budget.enabled`
+all `false`. Every feature gates on its own property so a Phase 1 deployment
+upgrading to 1.0.0 has zero behavioural drift. Preserve this default-off
+stance when adding new features. `muxai.pii.outbound.enabled` is a nested
+toggle (`muxai.pii.enabled` gates the whole redactor; outbound also requires
+`muxai.pii.outbound.enabled: true`), and `muxai_cost_usd_total` is emitted
+whenever pricing is configured regardless of `muxai.budget.enabled` — only
+rejection is gated.
 
 `SemanticCache` is exact-match SHA-256 keyed on
 `(model, messages, temperature, top_p, max_tokens, stop)`. Streaming, tool
@@ -251,8 +268,8 @@ here rather than in each consumer.
 - `expiresAt: Instant` — checked at request time by `ApiKeyAuthFilter.isExpired(now)`.
   Boot does NOT reject expired entries (operators legitimately leave them in
   `providers.yml` until cleanup).
-- `dailyBudgetUsd: Double` — reserved for Sprint 2 `BudgetGuard`; not enforced
-  yet.
+- `dailyBudgetUsd: Double` — per-app daily USD cap enforced by `BudgetGuard`
+  when `muxai.budget.enabled: true`; see Cost & budget below.
 
 **Rotation flow** (`KeyRotationService` + `ApiKeyOverlay`):
 
@@ -273,6 +290,39 @@ here rather than in each consumer.
 Rotation state survives restart because `ConfigWatcher.@PostConstruct`
 applies the overlay before opening the request port.
 
+### Cost & budget
+
+`PricingTable` reads `ProviderProperties.pricing[<model>]` entries
+(`inputPer1MUsd` / `outputPer1MUsd`) declared in `providers.yml`, rebuilds on
+every config reload via the standard `ConfigRuntime` listener, and exposes
+`usdFor(providerId, model, promptTokens, completionTokens)`. Missing pricing
+returns `0.0` and logs a single warning per `(provider, model)` pair —
+deliberately lenient so a cost-attribution gap doesn't 5xx.
+
+`RequestMetrics.recordCost` runs at the tail of every successful blocking
+request (via `recordSuccess`), emits
+`muxai_cost_usd_total{app_id, provider_id, model}`, and calls
+`BudgetGuard.record(appId, usd)` to update the per-app running total.
+**Streaming does NOT yet record cost** — `recordStreamSuccess` logs
+`prompt_tokens=0 completion_tokens=0` and skips `recordCost` because the
+current adapter doesn't aggregate usage across `message_stop` / `stream_options`
+events. Wiring that in lands alongside Sprint 3's `stream_options` support;
+until then, streaming traffic bypasses the budget.
+
+`BudgetGuard.check(principal)` in controllers rejects the next request once
+today's cumulative USD hits the cap — enforcement is post-hoc, so a single
+in-flight request can overshoot by its own cost (documented as
+hard-cap-on-next-call; adequate for containment, not billing-grade accuracy).
+Counters key on `appId|YYYY-MM-DD` in UTC, so the daily budget rolls at
+00:00 UTC regardless of deployment timezone.
+
+**`RequestMetrics` injects `PricingTable` and `BudgetGuard` as
+`ObjectProvider` (lazy)** to break an otherwise-circular dependency
+(`ConfigRuntime → RequestMetrics → PricingTable → ConfigRuntime`). Don't
+refactor those fields into plain `@Autowired` — boot will deadlock. Both
+resolves are null-safe so tests and the secondary `RequestMetrics(registry)`
+constructor work without wiring the cost layer at all.
+
 ### Observability
 
 - Structured log line per request is emitted by `RequestMetrics.recordSuccess`
@@ -283,8 +333,10 @@ applies the overlay before opening the request port.
   the field order/shape without updating downstream log-aggregator parsers.
 - Prometheus metrics: `muxai_request_total`, `muxai_provider_call` (timer
   with `app_id`/`provider_id`/`outcome` tags), `muxai_tokens_total`,
-  `muxai_cache_hit_total`/`_miss_total`, `muxai_pii_redacted_total`,
-  `muxai_request_rate_limited_total`, `muxai_config_reload_total` (tagged
+  `muxai_cost_usd_total` (tagged `app_id`/`provider_id`/`model`; only emitted
+  when pricing is declared), `muxai_cache_hit_total`/`_miss_total`,
+  `muxai_pii_redacted_total`, `muxai_request_rate_limited_total`,
+  `muxai_config_reload_total` (tagged
   `outcome=success|invalid|parse_failed|io_error|listener_error` — alerts
   should fire on anything but `success`).
 - `ProvidersHealthIndicator` exposes provider inventory under
@@ -318,26 +370,12 @@ parents does NOT propagate the changes to `main`. Either keep all PRs
 targeting `main` and accept the larger diff, or open a fresh combined PR
 once the chain merges into the trunk.
 
-## Roadmap (Sprints 2–5)
+## Roadmap (Sprints 3–5)
 
-Sprints 0 and 1 (schema foundations + admin gating + ACLs + key rotation)
-are merged. The remaining roadmap is captured in
-`~/.claude/plans/graceful-watching-scott.md`. High-level scope:
-
-- **Sprint 2 — Cost & governance** (~5-7 days)
-  - `cost/PricingTable` reading `ProviderProperties.pricing`.
-  - `muxai_cost_usd_total{app_id, provider_id, model}` counter in
-    `RequestMetrics` (incremented in `recordSuccess` / `recordStreamSuccess`).
-  - `cost/BudgetGuard` enforcing per-app `dailyBudgetUsd` (post-hoc — overshoots
-    by up to one in-flight request; documented as hard-cap-on-next-request).
-    429 with `type: "budget_exceeded"`.
-  - `RouteMatcher.findRoute` → `findAllMatching` + new `RouteSelector` strategy
-    interface; default `PrimaryFirst`, opt-in `CheapestFirst` via
-    `routes[].strategy: cheapest`. Touches both `Router.routeChat` and
-    `Router.streamChat`.
-  - `PiiRedactor.redactResponse(ChatResponse)` — blocking responses only.
-    Streaming-aware outbound scrub deferred (split-across-chunks problem).
-    Gated on `muxai.pii.outbound.enabled`.
+Sprints 0, 1, and 2 (schema foundations + admin gating + ACLs + key rotation
++ pricing/budget/outbound-PII/cheapest-first strategy) are merged. The
+remaining roadmap is captured in `~/.claude/plans/graceful-watching-scott.md`.
+High-level scope:
 
 - **Sprint 3 — Provider feature parity** (~3-4 days)
   - `OpenAiChatRequest` + internal `ChatRequest` get `response_format`,
@@ -371,7 +409,7 @@ are merged. The remaining roadmap is captured in
   - New "Live" tab in `static/admin/` using fetch + ReadableStream (EventSource
     can't carry a Bearer header).
 
-**Cross-cutting design decisions** (already locked in by Sprint 0/1
+**Cross-cutting design decisions** (already locked in by Sprint 0-2
 implementation, applies to all remaining sprints):
 
 1. Admin auth is role-based API keys — not mTLS.
