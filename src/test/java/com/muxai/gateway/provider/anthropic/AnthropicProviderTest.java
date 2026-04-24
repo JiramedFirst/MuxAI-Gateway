@@ -176,4 +176,29 @@ class AnthropicProviderTest {
                 })
                 .verify();
     }
+
+    @Test
+    void outboundRequestsCarryPromptCachingBetaHeader() {
+        wm.stubFor(post(urlEqualTo("/messages"))
+                .willReturn(aResponse()
+                        .withStatus(200)
+                        .withHeader("Content-Type", "application/json")
+                        .withBody("""
+                                {"id":"msg_x","type":"message","role":"assistant","model":"claude-sonnet-4-6",
+                                 "content":[{"type":"text","text":"ok"}],
+                                 "stop_reason":"end_turn",
+                                 "usage":{"input_tokens":1,"output_tokens":1}}
+                                """)));
+
+        AnthropicProvider provider = newProvider();
+        ChatRequest r = new ChatRequest(
+                "claude-sonnet-4-6",
+                List.of(new ChatMessage("user", "hi")),
+                null, null, null, null, null);
+
+        StepVerifier.create(provider.chat(r)).expectNextCount(1).verifyComplete();
+
+        wm.verify(postRequestedFor(urlEqualTo("/messages"))
+                .withHeader("anthropic-beta", equalTo("prompt-caching-2024-07-31")));
+    }
 }

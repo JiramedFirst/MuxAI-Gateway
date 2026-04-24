@@ -10,6 +10,7 @@ import com.muxai.gateway.provider.model.ToolCall;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -124,5 +125,124 @@ class AnthropicTranslationTest {
         assertThat(translated.tools()).hasSize(1);
         assertThat(translated.tools().get(0).name()).isEqualTo("get_weather");
         assertThat(translated.toolChoice()).isNotNull();
+    }
+
+    @Test
+    void textContentPartPreservesCacheControl() {
+        Map<String, Object> part = new LinkedHashMap<>();
+        part.put("type", "text");
+        part.put("text", "Long system-like prompt");
+        part.put("cache_control", Map.of("type", "ephemeral"));
+
+        ChatRequest r = new ChatRequest(
+                "claude-sonnet-4-6",
+                List.of(new ChatMessage("user", List.of(part))),
+                null, null, 100, null, null, null, null);
+
+        AnthropicProvider.AnthropicMessagesRequest body = provider().toAnthropic(r, false);
+
+        List<?> blocks = (List<?>) body.messages().get(0).content();
+        Map<?, ?> textBlock = (Map<?, ?>) blocks.get(0);
+        assertThat(textBlock.get("type")).isEqualTo("text");
+        assertThat(textBlock.get("text")).isEqualTo("Long system-like prompt");
+        assertThat(textBlock.get("cache_control")).isEqualTo(Map.of("type", "ephemeral"));
+    }
+
+    @Test
+    void textContentPartWithoutCacheControlHasNoCacheControlKey() {
+        Map<String, Object> part = Map.of("type", "text", "text", "hi");
+
+        ChatRequest r = new ChatRequest(
+                "claude-sonnet-4-6",
+                List.of(new ChatMessage("user", List.of(part))),
+                null, null, 100, null, null, null, null);
+
+        AnthropicProvider.AnthropicMessagesRequest body = provider().toAnthropic(r, false);
+        List<?> blocks = (List<?>) body.messages().get(0).content();
+        Map<?, ?> textBlock = (Map<?, ?>) blocks.get(0);
+        assertThat(textBlock.get("cache_control")).isNull();
+        assertThat(textBlock.containsKey("cache_control")).isFalse();
+    }
+
+    @Test
+    void imageContentPartPreservesCacheControl() {
+        Map<String, Object> part = new LinkedHashMap<>();
+        part.put("type", "image_url");
+        part.put("image_url", Map.of("url", "https://example.com/cat.jpg"));
+        part.put("cache_control", Map.of("type", "ephemeral"));
+
+        ChatRequest r = new ChatRequest(
+                "claude-sonnet-4-6",
+                List.of(new ChatMessage("user", List.of(part))),
+                null, null, 100, null, null, null, null);
+
+        AnthropicProvider.AnthropicMessagesRequest body = provider().toAnthropic(r, false);
+        List<?> blocks = (List<?>) body.messages().get(0).content();
+        Map<?, ?> imageBlock = (Map<?, ?>) blocks.get(0);
+        assertThat(imageBlock.get("type")).isEqualTo("image");
+        assertThat(imageBlock.get("cache_control")).isEqualTo(Map.of("type", "ephemeral"));
+    }
+
+    @Test
+    void responseFormatOnAnthropicIsDroppedAndWarned() {
+        var appender = attachAppender();
+        ChatRequest r = new ChatRequest(
+                "claude-sonnet-4-6",
+                List.of(new ChatMessage("user", "hi")),
+                null, null, 100, null, null, null, null,
+                Map.of("type", "json_object"),
+                null, null);
+
+        AnthropicProvider.AnthropicMessagesRequest body = provider().toAnthropic(r, false);
+        assertThat(toJson(body)).doesNotContain("response_format");
+        assertThat(appender.list)
+                .extracting(e -> e.getFormattedMessage())
+                .anyMatch(m -> m.contains("response_format"));
+    }
+
+    @Test
+    void seedOnAnthropicIsDroppedAndWarned() {
+        var appender = attachAppender();
+        ChatRequest r = new ChatRequest(
+                "claude-sonnet-4-6",
+                List.of(new ChatMessage("user", "hi")),
+                null, null, 100, null, null, null, null,
+                null, 42, null);
+
+        AnthropicProvider.AnthropicMessagesRequest body = provider().toAnthropic(r, false);
+        assertThat(toJson(body)).doesNotContain("\"seed\"");
+        assertThat(appender.list)
+                .extracting(e -> e.getFormattedMessage())
+                .anyMatch(m -> m.contains("seed"));
+    }
+
+    @Test
+    void streamOptionsOnAnthropicIsDroppedAndWarned() {
+        var appender = attachAppender();
+        ChatRequest r = new ChatRequest(
+                "claude-sonnet-4-6",
+                List.of(new ChatMessage("user", "hi")),
+                null, null, 100, null, null, null, null,
+                null, null, Map.of("include_usage", true));
+
+        AnthropicProvider.AnthropicMessagesRequest body = provider().toAnthropic(r, false);
+        assertThat(toJson(body)).doesNotContain("stream_options");
+        assertThat(appender.list)
+                .extracting(e -> e.getFormattedMessage())
+                .anyMatch(m -> m.contains("stream_options"));
+    }
+
+    private static ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> attachAppender() {
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(AnthropicProvider.class);
+        var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+        appender.start();
+        logger.addAppender(appender);
+        return appender;
+    }
+
+    private static String toJson(Object o) {
+        try { return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(o); }
+        catch (Exception e) { throw new RuntimeException(e); }
     }
 }

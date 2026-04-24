@@ -1,8 +1,6 @@
 package com.muxai.gateway.cache;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import com.muxai.gateway.provider.model.ChatRequest;
 import com.muxai.gateway.provider.model.ChatResponse;
 import org.slf4j.Logger;
@@ -12,15 +10,15 @@ import org.springframework.stereotype.Component;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
-import java.time.Duration;
 import java.util.HexFormat;
 
 /**
  * Exact-match request cache for chat completions.
  *
- * The "semantic" name tracks the roadmap: today we hash the full normalized
- * request; the intent is for a future embedding-similarity lookup to live
- * behind the same interface, so callers don't need to change when it lands.
+ * The "semantic" name tracks the roadmap: today the {@link ExactMatchBackend}
+ * hashes the full normalized request; a future embedding-similarity backend
+ * can drop in behind the same {@link Backend} interface without changing
+ * callers.
  *
  * Keying is intentionally strict — model, messages, and deterministic
  * sampling parameters are all folded into the hash. A single varied token
@@ -36,16 +34,12 @@ public class SemanticCache {
 
     private final CacheProperties props;
     private final ObjectMapper mapper;
-    private final Cache<String, ChatResponse> cache;
+    private final Backend backend;
 
-    public SemanticCache(CacheProperties props, ObjectMapper mapper) {
+    public SemanticCache(CacheProperties props, ObjectMapper mapper, Backend backend) {
         this.props = props;
         this.mapper = mapper;
-        this.cache = Caffeine.newBuilder()
-                .maximumSize(props.maxEntriesOrDefault())
-                .expireAfterWrite(Duration.ofSeconds(props.ttlSecondsOrDefault()))
-                .recordStats()
-                .build();
+        this.backend = backend;
     }
 
     public boolean enabled() { return props.enabledOrDefault(); }
@@ -54,7 +48,7 @@ public class SemanticCache {
         if (!cacheable(request)) return null;
         String key = keyOf(request);
         if (key == null) return null;
-        ChatResponse hit = cache.getIfPresent(key);
+        ChatResponse hit = backend.get(key);
         if (hit != null && log.isDebugEnabled()) {
             log.debug("semantic_cache hit key={}", key.substring(0, 12));
         }
@@ -65,12 +59,12 @@ public class SemanticCache {
         if (!cacheable(request) || response == null) return;
         String key = keyOf(request);
         if (key == null) return;
-        cache.put(key, response);
+        backend.put(key, response);
     }
 
-    public long size() { return cache.estimatedSize(); }
+    public long size() { return backend.size(); }
 
-    public void invalidateAll() { cache.invalidateAll(); }
+    public void invalidateAll() { backend.invalidateAll(); }
 
     boolean cacheable(ChatRequest request) {
         if (!props.enabledOrDefault()) return false;
@@ -107,6 +101,26 @@ public class SemanticCache {
             Integer maxTokens,
             Object stop
     ) {}
+
+    /**
+     * Storage primitive for {@link SemanticCache}. {@link ExactMatchBackend}
+     * ships today; an embedding-similarity backend can be swapped in without
+     * touching callers because key derivation and eligibility checks live in
+     * {@link SemanticCache}, not here.
+     */
+    public interface Backend {
+        /** Return the cached response for {@code key}, or {@code null} if absent. */
+        ChatResponse get(String key);
+
+        /** Store {@code response} under {@code key}. Caller guarantees non-null inputs. */
+        void put(String key, ChatResponse response);
+
+        /** Drop every entry. */
+        void invalidateAll();
+
+        /** Approximate entry count; best-effort for stats / tests. */
+        long size();
+    }
 
     // Package-private for tests.
     static MessageDigest newSha256() {

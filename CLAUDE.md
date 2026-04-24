@@ -133,6 +133,20 @@ do bidirectional translation, including:
 - Streaming: Anthropic `message_start` / `content_block_*` / `message_delta`
   events are re-emitted as OpenAI `chat.completion.chunk` shapes. `tool_use`
   blocks accumulate their `input_json_delta` partials indexed by block number.
+- Per-content-block `cache_control`: the inbound part's `cache_control` key
+  (e.g. `{"type":"ephemeral"}`) is copied verbatim onto the translated
+  Anthropic `text`/`image` block so prompt caching works across both.
+  `AnthropicProviderFactory` attaches `anthropic-beta: prompt-caching-2024-07-31`
+  as a default header. **System-level caching is not yet supported** — the
+  gateway still collapses multiple `system` messages into a single `String`
+  field, which strips any `cache_control`. Restructuring `system` into a
+  block array is a future plan.
+- `response_format`, `seed`, `stream_options`: OpenAI-native fields added to
+  `OpenAiChatRequest` and the internal `ChatRequest`. OpenAI adapters
+  passthrough (Jackson serialises via `@JsonProperty` snake-case). Anthropic
+  drops each with a single `log.warn(...)` per field (`"<field> not
+  supported; dropping field (model=...)"`) and continues — no compatibility
+  shim.
 
 `ChatMessage.content` is typed as `Object` so it round-trips both the plain
 string form and the multi-part list form without re-modelling. Use
@@ -221,7 +235,11 @@ rejection is gated.
 `SemanticCache` is exact-match SHA-256 keyed on
 `(model, messages, temperature, top_p, max_tokens, stop)`. Streaming, tool
 calls, and `temperature > max-cacheable-temperature` (default 0.0) bypass the
-cache entirely — see `cacheable()`.
+cache entirely — see `cacheable()`. Storage is delegated to a
+`SemanticCache.Backend` (currently only `ExactMatchBackend` — Caffeine-backed,
+bounded, write-expire TTL). The interface mirrors the `RateLimiter.Backend`
+pattern so an embedding-similarity backend can drop in without touching
+callers.
 
 ### Rate limiting is pluggable
 
