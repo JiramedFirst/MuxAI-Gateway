@@ -388,23 +388,13 @@ parents does NOT propagate the changes to `main`. Either keep all PRs
 targeting `main` and accept the larger diff, or open a fresh combined PR
 once the chain merges into the trunk.
 
-## Roadmap (Sprints 3–5)
+## Roadmap (Sprints 4–5)
 
-Sprints 0, 1, and 2 (schema foundations + admin gating + ACLs + key rotation
-+ pricing/budget/outbound-PII/cheapest-first strategy) are merged. The
-remaining roadmap is captured in `~/.claude/plans/graceful-watching-scott.md`.
-High-level scope:
-
-- **Sprint 3 — Provider feature parity** (~3-4 days)
-  - `OpenAiChatRequest` + internal `ChatRequest` get `response_format`,
-    `seed`, `stream_options`. OpenAI passes through verbatim; Anthropic drops
-    with a logged warning (no shim).
-  - `AnthropicProvider.toAnthropic` preserves per-content-block
-    `cache_control`; factory adds `anthropic-beta: prompt-caching-2024-07-31`
-    default header.
-  - `SemanticCache.Backend` interface; current Caffeine impl becomes
-    `ExactMatchBackend`. `EmbeddingBackend` deferred until traffic exists to
-    tune the similarity threshold.
+Sprints 0–3 (schema foundations + admin gating + ACLs + key rotation +
+pricing/budget/outbound-PII/cheapest-first strategy + `response_format`/
+`seed`/`stream_options` passthrough + Anthropic prompt caching + pluggable
+`SemanticCache.Backend`) are merged. The remaining roadmap is captured in
+`~/.claude/plans/graceful-watching-scott.md`. High-level scope:
 
 - **Sprint 4 — Operations** (~4-6 days)
   - `RedisRateLimitBackend` implementing existing `RateLimiter.Backend` (Lua
@@ -427,14 +417,23 @@ High-level scope:
   - New "Live" tab in `static/admin/` using fetch + ReadableStream (EventSource
     can't carry a Bearer header).
 
-**Cross-cutting design decisions** (already locked in by Sprint 0-2
+**Cross-cutting design decisions** (already locked in by Sprint 0-3
 implementation, applies to all remaining sprints):
 
 1. Admin auth is role-based API keys — not mTLS.
-2. Embedding-based cache backend deferred (interface only ships in Sprint 3).
+2. Embedding-based cache backend deferred; `SemanticCache.Backend` interface
+   shipped in Sprint 3, only `ExactMatchBackend` (Caffeine) wired today.
 3. Streaming outbound PII deferred to post-v1.
 4. Structured outputs are pass-through only; no server-side validation.
+   Anthropic drops `response_format`/`seed`/`stream_options` with a
+   `log.warn` — no compatibility shim.
 5. OTEL Logback changes must be additive.
 6. Budget enforcement is post-hoc (overshoots by one in-flight request).
+   Streaming does not yet record cost — wires up with Sprint 4 once
+   `stream_options` is honoured end-to-end.
 7. Rotation state lives in `runtime-keys.yml` overlay, not embedded in
    `providers.yml`.
+8. Anthropic system-level prompt caching deferred — the gateway still
+   collapses multiple `system` messages into a single string, which strips
+   any `cache_control`. Per-content-block caching on user/assistant
+   messages works today.
