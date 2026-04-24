@@ -221,7 +221,11 @@ rejection is gated.
 `SemanticCache` is exact-match SHA-256 keyed on
 `(model, messages, temperature, top_p, max_tokens, stop)`. Streaming, tool
 calls, and `temperature > max-cacheable-temperature` (default 0.0) bypass the
-cache entirely — see `cacheable()`.
+cache entirely — see `cacheable()`. Storage is delegated to a
+`SemanticCache.Backend` (currently only `ExactMatchBackend` — Caffeine-backed,
+bounded, write-expire TTL). The interface mirrors the `RateLimiter.Backend`
+pattern so an embedding-similarity backend can drop in without touching
+callers.
 
 ### Rate limiting is pluggable
 

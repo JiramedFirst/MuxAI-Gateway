@@ -16,7 +16,7 @@ class SemanticCacheTest {
 
     private static SemanticCache cache(boolean enabled) {
         CacheProperties props = new CacheProperties(enabled, 10, 60L, 0.0);
-        return new SemanticCache(props, new ObjectMapper());
+        return new SemanticCache(props, new ObjectMapper(), new ExactMatchBackend(props));
     }
 
     private static ChatRequest req(String userContent, Double temperature) {
